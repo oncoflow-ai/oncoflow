@@ -1,0 +1,5 @@
+Method,Duration (s),File Size (MB),Notes
+SimpleITK,0.241,7.28,
+dcm2niix (not installed – using A1 as proxy),0.241,7.28,
+SimpleITK + N4 + Z-score,4.01,19.89,
+SimpleITK + 1mm resample,0.231,6.73,

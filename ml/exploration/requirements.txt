@@ -1,0 +1,50 @@
+# OncoFlow – ML Exploration Dependencies
+# Install with: pip install -r requirements.txt
+# GPU is optional; notebooks detect CUDA and fall back gracefully.
+
+# === Core Scientific Stack ===
+numpy>=1.26
+scipy>=1.12
+pandas>=2.2
+matplotlib>=3.8
+seaborn>=0.13
+scikit-learn>=1.4
+scikit-image>=0.22
+
+# === Medical Imaging I/O ===
+pydicom>=2.4
+nibabel>=5.2
+SimpleITK>=2.3
+# dcm2niix must be installed via: brew install dcm2niix (macOS) / apt install dcm2niix
+
+# === Deep Learning ===
+torch>=2.2
+torchvision>=0.17
+
+# === MedGemma / LLaVA-Med (HuggingFace) ===
+transformers>=4.47
+accelerate>=0.27
+# Optional: bitsandbytes>=0.42  # 4-bit quantisation (Linux only)
+
+# === SAM2 (SAM3 API TBD) ===
+# pip install git+https://github.com/facebookresearch/sam2.git
+# For SAM3: pip install git+https://github.com/facebookresearch/sam3.git
+
+# === nnU-Net v2 ===
+nnunetv2>=2.4
+# Requires nnUNet environment variables:
+#   export nnUNet_raw=<path>/nnunet_raw
+#   export nnUNet_preprocessed=<path>/nnunet_preprocessed
+#   export nnUNet_results=<path>/nnunet_results
+
+# === Jupyter ===
+jupyterlab>=4.0
+ipywidgets>=8.1
+papermill>=2.5   # for headless notebook execution
+
+# === MedSAM (alternative SAM medical adaptation) ===
+# pip install git+https://github.com/bowang-lab/MedSAM.git
+
+# === Visualisation extras ===
+plotly>=5.20
+kaleido>=0.2    # plotly static export

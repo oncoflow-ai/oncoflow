@@ -1,0 +1,7 @@
+model,timepoint,dice,iou,volume_pred_cm3,volume_gt_cm3,inference_s,vram_gb,hd95_mm,is_stub,reason
+medgemma_no_prompt,baseline,0.0,0.0,14.045,14.815,2154.37,0.0,60.63,,
+medgemma_clinical_prompt,baseline,0.0,0.0,14.045,14.815,2154.37,0.0,61.02,,
+medgemma_stub,baseline,0.061,0.0314,471.313,14.815,0.0,0.0,150.98,True,MPS too slow for full inference
+medgemma_stub,fu1,0.0136,0.0068,453.883,3.101,0.0,0.0,166.73,True,MPS too slow for full inference
+medgemma_stub,baseline,0.0608,0.0314,472.492,14.815,0.0,0.0,153.14,True,MPS too slow for full inference
+medgemma_stub,fu1,0.0136,0.0068,454.424,3.101,0.0,0.0,165.83,True,MPS too slow for full inference

@@ -1,0 +1,6 @@
+model,timepoint,dice,iou,volume_pred_cm3,volume_gt_cm3,inference_s,vram_gb,hd95_mm,stub,note
+nnunet,baseline,0.7316,0.5768,8.545,14.815,0.07,0.0,2.24,True,
+nnunet,fu1,,,,,,,,,No prediction available (no model loaded)
+nnunet,fu2,,,,,,,,,No prediction available (no model loaded)
+nnunet,fu3,,,,,,,,,No prediction available (no model loaded)
+nnunet,fu4,,,,,,,,,No prediction available (no model loaded)
