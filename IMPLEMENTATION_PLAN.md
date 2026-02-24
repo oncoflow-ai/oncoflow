@@ -689,35 +689,429 @@ CREATE TABLE model_evaluations (
 
 ---
 
-### Step 4.7 – Longitudinal Volume Comparison
+### Step 4.7 – Longitudinal Inference: Full Algorithm
 
-**What:** After two studies are segmented (using ensemble mask), compare tumor volumes.
+> **The core problem:** Two scans taken at different times differ in scanner orientation,
+> voxel spacing, head position, and image contrast. Naively subtracting volumes gives wrong
+> results. The correct approach is: **(1) register** the scans to a common space, then
+> **(2) re-segment consistently**, then **(3) compare** in that space.
+
+The algorithm has **5 sequential stages**:
+
+```
+Study A mask        Study B mask
+(T1, already        (T2, already
+ segmented)          segmented)
+      │                   │
+      ▼                   ▼
+┌─────────────────────────────────────────────────────┐
+│  Stage 1 – Pre-Registration Quality Check           │
+│  • Verify both NIfTIs are in RAS orientation        │
+│  • Skull-strip (HD-BET or MorphAnt) if not done     │
+│  • N4 bias-field correction (SimpleITK N4ITKBias)   │
+└──────────────────────────┬──────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────┐
+│  Stage 2 – Rigid / Affine Image Registration        │
+│  • Register T2 image → T1 image space (ANTsPy)      │
+│  • Obtain forward warp field T2→T1                  │
+│  • Apply warp to T2 ensemble mask → registered mask │
+└──────────────────────────┬──────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────┐
+│  Stage 3 – Consistent Re-Segmentation (optional)    │
+│  • If registration Dice < 0.70, run nnU-Net on      │
+│    registered T2 volume for a fresh mask (rather    │
+│    than just warping the old mask)                   │
+└──────────────────────────┬──────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────┐
+│  Stage 4 – Change Metrics Computation               │
+│  • Volume (cm³) for A and B                         │
+│  • Volume delta + % change                          │
+│  • Symmetric Dice between warped masks              │
+│  • Hausdorff distance (boundary motion)             │
+│  • Lesion growth rate (cm³/day)                     │
+│  • RECIST-1.1 longest diameter ratio                │
+└──────────────────────────┬──────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────┐
+│  Stage 5 – Uncertainty & Confidence Envelope        │
+│  • Jackknife volume estimate across 3 model masks   │
+│  • 95% CI on volume; flag if CI > ±15 %             │
+│  • Warp quality score (NCC / MI after registration) │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+#### Stage 1 – Pre-Registration Quality Check
+
+```python
+# ml/registration/preprocess.py
+import SimpleITK as sitk
+
+def orient_to_ras(nifti_path: str) -> sitk.Image:
+    """Reorient any NIfTI to RAS+ canonical space."""
+    img = sitk.ReadImage(nifti_path)
+    return sitk.DICOMOrient(img, "RAS")
+
+def n4_bias_correction(img: sitk.Image) -> sitk.Image:
+    """Remove low-frequency intensity inhomogeneity (scanner bias field)."""
+    corrector = sitk.N4BiasFieldCorrectionImageFilter()
+    corrector.SetMaximumNumberOfIterations([50, 40, 30])  # 3-level pyramid
+    return corrector.Execute(img)
+
+def preprocess_volume(nifti_path: str) -> sitk.Image:
+    img = orient_to_ras(nifti_path)
+    img = n4_bias_correction(img)
+    # Resample to isotropic 1 mm³ voxels (standardises all inputs)
+    ref_spacing = [1.0, 1.0, 1.0]
+    new_size = [
+        int(round(osz * ospc / rspc))
+        for osz, ospc, rspc in zip(img.GetSize(), img.GetSpacing(), ref_spacing)
+    ]
+    resampler = sitk.ResampleImageFilter()
+    resampler.SetOutputSpacing(ref_spacing)
+    resampler.SetSize(new_size)
+    resampler.SetInterpolator(sitk.sitkLinear)
+    resampler.SetOutputDirection(img.GetDirection())
+    resampler.SetOutputOrigin(img.GetOrigin())
+    return resampler.Execute(img)
+```
+
+> **Why N4 + resampling?** Different scanners produce different intensity scales and
+> voxel sizes. Normalising to 1 mm³ isotropic before registration makes the rigid transform
+> well-conditioned and prevents the registration from fitting to scanner artefacts.
+
+---
+
+#### Stage 2 – Rigid/Affine Image Registration (ANTsPy)
+
+This is the **most critical step**. We register the follow-up (T2 timepoint) into the
+coordinate space of the baseline (T1 timepoint), so every voxel comparison is anatomically valid.
+
+```python
+# ml/registration/register.py
+import ants
+import numpy as np
+import nibabel as nib
+
+def register_followup_to_baseline(
+    fixed_path: str,    # baseline NIfTI (T1, reference space)
+    moving_path: str,   # follow-up NIfTI (T2, to be warped)
+) -> dict:
+    """
+    Returns:
+        {
+          "warped_image": ants.ANTsImage,   # T2 in T1 space
+          "fwd_transforms": [...],          # transform files (for mask warp)
+          "ncc_before": float,              # image similarity before registration
+          "ncc_after": float,               # image similarity after registration
+        }
+    """
+    fixed  = ants.image_read(fixed_path)
+    moving = ants.image_read(moving_path)
+
+    ncc_before = float(ants.image_similarity(fixed, moving, metric_type="Correlation"))
+
+    # Stage 1: rigid (6 DOF) – coarse alignment
+    # Stage 2: affine (12 DOF) – correct for scaling/shear differences between sessions
+    result = ants.registration(
+        fixed=fixed,
+        moving=moving,
+        type_of_transform="Affine",   # upgrade to "SyN" for deformable if needed
+        grad_step=0.1,
+        flow_sigma=3,
+        total_sigma=0,
+        aff_metric="mattes",          # Mattes mutual information → robust across scanners
+        aff_sampling=32,
+        verbose=False,
+    )
+
+    ncc_after = float(ants.image_similarity(
+        fixed, result["warpedmovout"], metric_type="Correlation"
+    ))
+
+    return {
+        "warped_image": result["warpedmovout"],
+        "fwd_transforms": result["fwdtransforms"],
+        "ncc_before": ncc_before,
+        "ncc_after": ncc_after,
+    }
+
+def warp_mask(
+    mask_path: str,
+    fwd_transforms: list,
+    reference_image: ants.ANTsImage,
+) -> np.ndarray:
+    """Apply the same transform to the segmentation mask (nearest-neighbour interpolation)."""
+    mask_img = ants.image_read(mask_path)
+    warped = ants.apply_transforms(
+        fixed=reference_image,
+        moving=mask_img,
+        transformlist=fwd_transforms,
+        interpolator="nearestNeighbor",   # CRITICAL: do not interpolate binary masks
+    )
+    return warped.numpy().astype(np.uint8)
+```
+
+> **Why Affine, not just Rigid?**  
+> Between scan sessions, patients may lose/gain weight (brain shift), or different scanner
+> head-coils may induce slight scaling differences. Affine (12 DOF) corrects for these
+> without over-fitting like a deformable (SyN) warp would on a healthy baseline.
+>
+> **When to upgrade to SyN (deformable)?**  
+> Only if comparing across very different timepoints (>6 months) or after surgery where
+> anatomy has genuinely shifted. Flag this with `registration_quality < 0.6` and suggest
+> radiologist review.
+
+---
+
+#### Stage 3 – Consistent Re-Segmentation (Fallback)
+
+If the warp quality is poor (e.g. motion artifact, very different T1/T2 weighting), we
+re-run nnU-Net **on the registered volume** directly rather than warping the old mask.
+
+```python
+# ml/registration/resegment.py
+
+REGISTRATION_QUALITY_THRESHOLD = 0.65  # NCC; below this → re-segment
+
+def should_resegment(ncc_after: float) -> bool:
+    return ncc_after < REGISTRATION_QUALITY_THRESHOLD
+
+def get_followup_mask(
+    registered_nifti_path: str,
+    warped_mask: np.ndarray,
+    ncc_after: float,
+    job_id: str,
+) -> np.ndarray:
+    if should_resegment(ncc_after):
+        # Call nnU-Net service on the registered volume
+        response = requests.post(
+            "http://ml-nnunet:8001/infer",
+            json={"input_path": registered_nifti_path, "job_id": job_id}
+        )
+        # Wait for callback; return fresh mask
+        return wait_for_mask(job_id)
+    else:
+        return warped_mask  # warp was good enough
+```
+
+---
+
+#### Stage 4 – Change Metrics
 
 ```python
 # backend/app/services/comparison.py
 import nibabel as nib
 import numpy as np
+from scipy.ndimage import label
+from datetime import date
 
-def compute_volume_cm3(mask_nii: str) -> float:
-    img = nib.load(mask_nii)
-    voxel_vol_mm3 = float(np.prod(img.header.get_zooms()))
-    n_voxels = int(np.count_nonzero(img.get_fdata()))
-    return (n_voxels * voxel_vol_mm3) / 1000.0
+def compute_volume_cm3(mask: np.ndarray, zooms: tuple) -> float:
+    """Volume of foreground voxels in cm³."""
+    voxel_vol_mm3 = float(np.prod(zooms))
+    return int(np.count_nonzero(mask)) * voxel_vol_mm3 / 1000.0
 
-def create_comparison(study_a_id, study_b_id, db):
-    # uses ensemble mask by default; optionally per-model masks too
-    vol_a = compute_volume_cm3(get_ensemble_mask(study_a_id))
-    vol_b = compute_volume_cm3(get_ensemble_mask(study_b_id))
-    delta = vol_b - vol_a
-    pct   = (delta / vol_a * 100) if vol_a > 0 else 0
-    comparison = Comparison(
+def compute_dice(a: np.ndarray, b: np.ndarray) -> float:
+    """Symmetric Dice coefficient between two binary masks."""
+    intersection = np.logical_and(a, b).sum()
+    return 2.0 * intersection / (a.sum() + b.sum() + 1e-8)
+
+def compute_hausdorff_95(a: np.ndarray, b: np.ndarray) -> float:
+    """95th-percentile Hausdorff distance (mm) – measures boundary shift."""
+    from scipy.ndimage import distance_transform_edt
+    dist_a = distance_transform_edt(~a.astype(bool))
+    dist_b = distance_transform_edt(~b.astype(bool))
+    hd_ab = dist_a[b.astype(bool)]
+    hd_ba = dist_b[a.astype(bool)]
+    return float(np.percentile(np.concatenate([hd_ab, hd_ba]), 95))
+
+def compute_recist_diameter(mask: np.ndarray) -> float:
+    """RECIST-1.1: longest axial diameter (mm) of the largest lesion component."""
+    labeled, n = label(mask)
+    if n == 0:
+        return 0.0
+    largest = np.argmax([np.sum(labeled == i) for i in range(1, n+1)]) + 1
+    lesion = (labeled == largest)
+    # Project onto axial plane and find longest diameter
+    axial = lesion.any(axis=2)
+    rows = np.any(axial, axis=1)
+    cols = np.any(axial, axis=0)
+    return float(max(rows.sum(), cols.sum()))   # in voxels; multiply by spacing for mm
+
+def compute_growth_rate(vol_a: float, vol_b: float,
+                        date_a: date, date_b: date) -> float:
+    """Tumour volume growth rate in cm³/day."""
+    days = (date_b - date_a).days
+    if days == 0:
+        return 0.0
+    return (vol_b - vol_a) / days
+
+def create_longitudinal_comparison(
+    study_a_id: str,
+    study_b_id: str,
+    mask_a: np.ndarray,      # baseline ensemble mask (already in T1 space)
+    mask_b_warped: np.ndarray,  # follow-up mask warped into T1 space
+    zooms: tuple,            # voxel size of reference space
+    date_a: date,
+    date_b: date,
+    registration_ncc: float,
+    model_masks_a: dict,     # {'nnunet': arr, 'medgemma': arr, 'sam3': arr}
+    model_masks_b: dict,
+    db,
+) -> dict:
+
+    # ── Core metrics ───────────────────────────────────────────────────────────
+    vol_a   = compute_volume_cm3(mask_a, zooms)
+    vol_b   = compute_volume_cm3(mask_b_warped, zooms)
+    delta   = vol_b - vol_a
+    pct     = (delta / vol_a * 100.0) if vol_a > 1e-6 else 0.0
+    dice    = compute_dice(mask_a, mask_b_warped)
+    hd95    = compute_hausdorff_95(mask_a, mask_b_warped)
+    rate    = compute_growth_rate(vol_a, vol_b, date_a, date_b)
+    recist_a = compute_recist_diameter(mask_a)
+    recist_b = compute_recist_diameter(mask_b_warped)
+
+    # ── Uncertainty via jackknife across 3 model masks ─────────────────────────
+    vols_a = [compute_volume_cm3(m, zooms) for m in model_masks_a.values()]
+    vols_b = [compute_volume_cm3(m, zooms) for m in model_masks_b.values()]
+    # Leave-one-out jackknife mean
+    jk_deltas = [
+        (np.mean(vols_b) - vols_b[i]) - (np.mean(vols_a) - vols_a[i])
+        for i in range(len(vols_a))
+    ]
+    ci_half = 1.96 * np.std(jk_deltas) * np.sqrt(len(jk_deltas))
+
+    # ── Interpretation flag ────────────────────────────────────────────────────
+    if registration_ncc < 0.55:
+        flag = "⚠️ Poor registration – requires radiologist review"
+    elif ci_half / (abs(delta) + 1e-6) > 0.15:
+        flag = "⚠️ High volume uncertainty – models disagree"
+    elif delta > 0 and pct > 25:
+        flag = "🔴 Significant progression (>25% growth)"
+    elif delta < 0 and pct < -25:
+        flag = "🟢 Significant response (>25% reduction)"
+    elif abs(pct) <= 5:
+        flag = "⬜ Stable disease (volume within ±5%)"
+    else:
+        flag = "🟡 Minor change – monitor"
+
+    result = dict(
         study_a=study_a_id, study_b=study_b_id,
         volume_a_cm3=vol_a, volume_b_cm3=vol_b,
-        delta_cm3=delta, pct_change=pct
+        delta_cm3=delta, pct_change=pct,
+        dice_overlap=dice, hd95_mm=hd95,
+        growth_rate_cm3_per_day=rate,
+        recist_ratio=recist_b / (recist_a + 1e-6),
+        vol_delta_ci_half_cm3=ci_half,
+        registration_ncc=registration_ncc,
+        interpretation=flag,
     )
-    db.add(comparison); db.commit()
-    return comparison
+
+    db.add(Comparison(**result)); db.commit()
+    return result
 ```
+
+> **Metrics summary:**
+>
+> | Metric | Unit | Meaning |
+> |--------|------|---------|
+> | `delta_cm3` | cm³ | Raw volume change |
+> | `pct_change` | % | Relative change (RECIST response criterion) |
+> | `dice_overlap` | 0–1 | Spatial overlap of masks in registered space |
+> | `hd95_mm` | mm | How far the boundary moved (shape change) |
+> | `growth_rate_cm3_per_day` | cm³/day | Time-normalised growth velocity |
+> | `recist_ratio` | ratio | Longest-diameter ratio (RECIST-1.1 proxy) |
+> | `vol_delta_ci_half_cm3` | cm³ | 95% CI half-width from jackknife (model uncertainty) |
+> | `registration_ncc` | 0–1 | How well T2 aligned to T1 space (data quality proxy) |
+
+---
+
+#### Stage 5 – Interpretation Flags & Thresholds
+
+```
+registration_ncc < 0.55  →  ⚠️  Registration failed – do NOT trust comparison; manual review required
+CI / |delta| > 15 %      →  ⚠️  High model uncertainty – models disagree; radiologist needed
+pct_change > +25 %       →  🔴  Progressive disease (RECIST PD equivalent)
+-25 % < pct_change < +5% →  🟡  Minor change
+pct_change ≤ -25 %       →  🟢  Partial/complete response
+|pct_change| ≤ 5 %       →  ⬜  Stable disease
+```
+
+---
+
+#### Database Schema Extension
+
+```sql
+-- Extended comparisons table for full longitudinal metrics
+ALTER TABLE comparisons
+  ADD COLUMN dice_overlap              FLOAT,
+  ADD COLUMN hd95_mm                  FLOAT,
+  ADD COLUMN growth_rate_cm3_per_day  FLOAT,
+  ADD COLUMN recist_ratio             FLOAT,
+  ADD COLUMN vol_delta_ci_half_cm3    FLOAT,    -- jackknife uncertainty
+  ADD COLUMN registration_ncc         FLOAT,    -- warp quality
+  ADD COLUMN pct_change               FLOAT,
+  ADD COLUMN interpretation           TEXT;     -- human-readable flag
+
+-- Registration audit: store every transform for reproducibility
+CREATE TABLE registration_results (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    study_fixed_id  UUID REFERENCES studies(id),  -- baseline
+    study_moving_id UUID REFERENCES studies(id),  -- follow-up
+    transform_s3    TEXT NOT NULL,                -- .mat / .h5 warp field in S3
+    ncc_before      FLOAT,
+    ncc_after       FLOAT,
+    method          TEXT DEFAULT 'Affine',        -- 'Rigid' | 'Affine' | 'SyN'
+    created_at      TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+---
+
+#### Celery Task Chain (Updated)
+
+```python
+# backend/app/workers/tasks.py  (longitudinal section)
+
+@app.task
+def run_longitudinal_pipeline(study_a_id: str, study_b_id: str):
+    chain(
+        # Step 1: ensure both studies are segmented (idempotent check)
+        ensure_segmented_task.s(study_a_id),
+        ensure_segmented_task.s(study_b_id),
+        # Step 2: preprocess + register B → A space
+        preprocess_and_register_task.s(study_a_id, study_b_id),
+        # Step 3: warp B mask into A space (or re-segment if NCC < threshold)
+        warp_or_resegment_task.s(),
+        # Step 4: compute all change metrics
+        compute_longitudinal_metrics_task.s(),
+        # Step 5: write to DB + trigger report generation
+        store_comparison_task.s(),
+        generate_report_task.s(),
+    ).apply_async()
+```
+
+---
+
+#### Summary: Why This Algorithm Is Reliable
+
+| Risk | How We Handle It |
+|------|-----------------|
+| Scanner-to-scanner intensity drift | N4 bias correction before registration |
+| Different head positions between scans | Affine registration (12 DOF) |
+| Poor scan quality / motion artefact | NCC quality gate → fallback to re-segmentation |
+| Model disagreement inflating apparent change | Jackknife CI on volume estimate |
+| Boundary shift missed by volume alone | Hausdorff 95th-percentile metric |
+| Clinician misinterpretation | Automatic interpretation flag with RECIST-style thresholds |
+| Warp applied wrongly to mask | Nearest-neighbour interpolation enforced for binary masks |
 
 ---
 
@@ -897,7 +1291,7 @@ Work these into each phase above, not as an afterthought:
 | 4c | SAM3 service – automatic + interactive inference endpoint |
 | 4d | Ensemble service – majority vote, Dice metrics, agreement scoring |
 | 4e | Celery orchestrator – parallel fan-out task group + evaluation logging |
-| 5 | Volumetric comparison, longitudinal tracking (uses ensemble mask) |
+| 5 | Full longitudinal pipeline: preprocessing → ANTsPy registration → re-segmentation fallback → multi-metric comparison → uncertainty CI |
 | 6 | RAG pipeline (document ingestion + query) |
 | 7 | PDF report generation (include per-model comparison table) + signing |
 | 8 | React frontend – dashboard, patient page, upload UX, model selector |
@@ -962,6 +1356,18 @@ scipy
 simpleitk          # for STAPLE algorithm
 ```
 
+**Registration service (`ml/registration/`):**
+```txt
+antspyx            # ANTsPy – affine / SyN image registration
+SimpleITK          # N4 bias correction, resampling, orientation
+nibabel
+numpy
+scipy
+# Optional skull-stripping:
+# hd-bet            # HD-BET (GPU); pip install hd-bet
+# antspynet         # MorphAnt fallback (CPU)
+```
+
 ## Key Dependencies (Node/React)
 
 ```
@@ -978,15 +1384,26 @@ zustand
 ## Notes & Decisions to Revisit
 
 1. **LLM choice for RAG** – OpenAI GPT-4o vs. local Mistral (data sovereignty).
-2. **Image registration** – ANTsPy vs SimpleElastix for multi-scan alignment.
-3. **nnU-Net checkpoint** – BraTS pretrained vs Ichilov fine-tuned; set `NNUNET_DATASET_ID` env var.
-4. **MedGemma access** – Requires HuggingFace approval; apply at hf.co/google/medgemma.
+2. **Image registration method** – ANTsPy `Affine` is the default. Upgrade to `SyN` (deformable)
+   when timepoints are >6 months apart or post-surgery. Use `SimpleElastix` as a lightweight
+   alternative if ANTsPy's install footprint is too large in the container.
+3. **Registration NCC threshold** – Currently 0.65 triggers re-segmentation. Calibrate this
+   against your Ichilov dataset; lower if scans are consistently low-contrast.
+4. **Skull stripping** – HD-BET (GPU) is recommended for accuracy; MorphAnt (CPU) as fallback.
+   Both must be applied before registration to prevent skull-to-skull misalignment dominating the fit.
+5. **nnU-Net checkpoint** – BraTS pretrained vs Ichilov fine-tuned; set `NNUNET_DATASET_ID` env var.
+6. **MedGemma access** – Requires HuggingFace approval; apply at hf.co/google/medgemma.
    Fallback: use `LLaVA-Med` (open licence) while waiting for approval.
-5. **SAM3 availability** – SAM3 package API may still be evolving; pin a commit hash in Dockerfile.
+7. **SAM3 availability** – SAM3 package API may still be evolving; pin a commit hash in Dockerfile.
    Fallback: SAM2 with 3-D volume support works today.
-6. **Ensemble strategy** – Start with majority vote (simple); upgrade to STAPLE or learned weights
+8. **Ensemble strategy** – Start with majority vote (simple); upgrade to STAPLE or learned weights
    once you have ground-truth annotations from Ichilov radiologists.
-7. **FAISS vs ChromaDB** – ChromaDB has persistence/multi-tenant support if needed.
-8. **AWS vs on-prem** – The HLD specifies AWS; revisit if hospital data cannot leave premises.
-9. **GPU budget** – Running three models in parallel requires significant VRAM; consider
-   sequential inference on a single large GPU or three smaller GPU nodes.
+9. **RECIST diameter computation** – Current implementation projects onto the axial plane.
+   A more accurate implementation measures the 3-D maximum caliper distance; revisit post-MVP.
+10. **FAISS vs ChromaDB** – ChromaDB has persistence/multi-tenant support if needed.
+11. **AWS vs on-prem** – The HLD specifies AWS; revisit if hospital data cannot leave premises.
+12. **GPU budget** – Running three models in parallel requires significant VRAM; consider
+    sequential inference on a single large GPU or three smaller GPU nodes.
+13. **Transform storage** – ANTsPy writes `.mat` (affine) or composite `.h5` (SyN) files.
+    Store them in S3 under `transforms/{patient_uuid}/{study_a_uuid}_to_{study_b_uuid}/`
+    so any comparison can be exactly reproduced.
