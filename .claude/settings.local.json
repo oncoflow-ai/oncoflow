@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(/Users/alonzyl/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.2/scripts/start-server.sh --project-dir /Users/alonzyl/Desktop/coding/oncoflow)",
-      "Bash(/Users/alonzyl/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.2/skills/brainstorming/scripts/start-server.sh --project-dir /Users/alonzyl/Desktop/coding/oncoflow)"
-    ]
-  }
-}

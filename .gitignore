@@ -39,3 +39,6 @@ yarn-error.log*
 
 # OS files
 Thumbs.db
+.claude/
+docs/superpowers/
+.superpowers/
