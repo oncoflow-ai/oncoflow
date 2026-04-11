@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import zipfile
 from pathlib import Path
@@ -89,12 +90,12 @@ def test_submission_dispatches_identifiers_not_raw_bytes(monkeypatch: pytest.Mon
     service = JobService()
     monkeypatch.setattr(service, "_dispatch_worker", fake_dispatch)
 
-    result = pytest.run(async_fn=service.submit_mri_study)(
+    result = asyncio.run(service.submit_mri_study(
         filename="exam.zip",
         content_type="application/zip",
         archive_bytes=archive_bytes,
         source_label="dispatch-check",
-    )
+    ))
 
     assert captured["job_id"] == str(result.job_public_id)
     assert captured["study_id"] == str(result.study_public_id)
