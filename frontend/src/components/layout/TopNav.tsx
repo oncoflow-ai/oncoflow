@@ -34,6 +34,7 @@ export default function TopNav({ searchValue, onSearchChange, showSearch = false
             value={searchValue ?? ''}
             onChange={e => onSearchChange?.(e.target.value)}
             placeholder="Search by patient name or ID..."
+            aria-label="Search patients"
             className="bg-transparent border-none outline-none text-text1 text-[13px] placeholder-text3 font-sans w-full"
           />
         </div>

@@ -5,6 +5,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
+from sqlalchemy import UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
 
@@ -36,6 +37,10 @@ class Study(Base):
         cascade="all, delete-orphan",
     )
     jobs: Mapped[list["Job"]] = relationship(
+        back_populates="study",
+        cascade="all, delete-orphan",
+    )
+    result_sets: Mapped[list["StudyResult"]] = relationship(
         back_populates="study",
         cascade="all, delete-orphan",
     )
@@ -73,6 +78,51 @@ class Artifact(Base):
 
     study: Mapped[Study] = relationship(back_populates="artifacts")
     series: Mapped[Series | None] = relationship(back_populates="artifacts")
+
+
+class StudyResult(Base):
+    __tablename__ = "study_results"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    study_id: Mapped[int] = mapped_column(ForeignKey("studies.id"), index=True)
+    result_kind: Mapped[str] = mapped_column(String(64), default="single-scan")
+    needs_review: Mapped[bool] = mapped_column(default=False)
+    summary_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+    study: Mapped[Study] = relationship(back_populates="result_sets")
+    lesions: Mapped[list["StoredLesionResult"]] = relationship(
+        back_populates="study_result",
+        cascade="all, delete-orphan",
+    )
+
+
+class StoredLesionResult(Base):
+    __tablename__ = "lesion_results"
+    __table_args__ = (UniqueConstraint("study_result_id", "lesion_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    study_result_id: Mapped[int] = mapped_column(ForeignKey("study_results.id"), index=True)
+    study_id: Mapped[int] = mapped_column(ForeignKey("studies.id"), index=True)
+    lesion_id: Mapped[str] = mapped_column(String(255))
+    measurement_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    bounding_box: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    artifact_refs: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    result_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+    study_result: Mapped[StudyResult] = relationship(back_populates="lesions")
+    study: Mapped[Study] = relationship()
 
 
 class Job(Base):

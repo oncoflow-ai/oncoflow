@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 status: ready
 stopped_at: Phase 01 complete
-last_updated: "2026-04-11T15:36:07Z"
-last_activity: 2026-04-11 -- Phase 01 completed with passing backend test suite
+last_updated: "2026-04-13T19:55:00Z"
+last_activity: 2026-04-13 -- Phase 03.1 code review and cleanup completed
 progress:
   total_phases: 5
   completed_phases: 1
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-11)
 
 **Core value:** Deliver reliable, quantitative tumor tracking from MRI scans so users can move from subjective visual comparison to reproducible lesion measurements.
-**Current focus:** Phase 02 planning — single-scan segmentation baseline
+**Current focus:** Phase 03.1 results integration and cleanup
 
 ## Current Position
 
-Phase: 02 of 5 (Single-Scan Segmentation Baseline) — READY
+Phase: 03.1 of 5 (Real nnU-Net Inference Integration) — complete
 Plan: 0 of unknown
-Status: Phase 01 complete; ready to discuss/plan Phase 02
-Last activity: 2026-04-11 -- Phase 01 completed with 27 passing backend tests
+Status: Phase 03.1 cleanup complete; ready for the next phase
+Last activity: 2026-04-13 -- backend/frontend audit-fix completed
 
 Progress: [██░░░░░░░░] 20%
 
@@ -52,6 +52,10 @@ Progress: [██░░░░░░░░] 20%
 - Trend: Improving
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 03.1 inserted after Phase 03: Real nnU-Net Inference Integration (URGENT)
 
 ### Decisions
 

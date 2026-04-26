@@ -16,6 +16,7 @@ except ModuleNotFoundError:
 
 from app.core.config import get_settings
 from app.api.routes.jobs import router as jobs_router
+from app.api.routes.results import router as results_router
 
 router = APIRouter()
 
@@ -31,8 +32,9 @@ def readiness() -> dict[str, str]:
     return {
         "status": "ready",
         "environment": settings.environment,
-        "queue": "configured",
+        "queue": settings.job_execution_mode,
     }
 
 
 router.include_router(jobs_router)
+router.include_router(results_router)

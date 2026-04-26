@@ -41,6 +41,8 @@ def _write_dicom(
     dataset.ManufacturerModelName = "MAGNETOM Cima.X Fit"
     dataset.MagneticFieldStrength = 3.0
     if pixel_spacing is not None:
+        dataset.Rows = 128
+        dataset.Columns = 128
         dataset.PixelSpacing = list(pixel_spacing)
         dataset.SliceThickness = 2.0
         dataset.SpacingBetweenSlices = 2.0

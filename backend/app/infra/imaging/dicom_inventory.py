@@ -9,6 +9,7 @@ import pydicom
 
 @dataclass(frozen=True)
 class DicomSeriesRecord:
+    study_instance_uid: str
     series_instance_uid: str
     modality: str
     series_description: str
@@ -21,6 +22,8 @@ class DicomSeriesRecord:
     slice_thickness: float | None
     spacing_between_slices: float | None
     orientation: tuple[float, ...] | None
+    rows: int | None
+    columns: int | None
     files: tuple[Path, ...]
     extra_metadata: dict[str, Any]
 
@@ -77,6 +80,7 @@ def scan_staged_study(study_root: str | Path, *, max_files: int = 5000) -> list[
         orientation_values = _as_float_tuple(getattr(dataset, "ImageOrientationPatient", None))
         records.append(
             DicomSeriesRecord(
+                study_instance_uid=str(getattr(dataset, "StudyInstanceUID", "")).strip(),
                 series_instance_uid=str(getattr(dataset, "SeriesInstanceUID", "")).strip(),
                 modality=str(getattr(dataset, "Modality", "")).strip().upper(),
                 series_description=str(getattr(dataset, "SeriesDescription", "")).strip(),
@@ -89,6 +93,8 @@ def scan_staged_study(study_root: str | Path, *, max_files: int = 5000) -> list[
                 slice_thickness=float(getattr(dataset, "SliceThickness", 0.0) or 0.0) or None,
                 spacing_between_slices=float(getattr(dataset, "SpacingBetweenSlices", 0.0) or 0.0) or None,
                 orientation=orientation_values,
+                rows=int(getattr(dataset, "Rows", 0) or 0) or None,
+                columns=int(getattr(dataset, "Columns", 0) or 0) or None,
                 files=tuple(sorted(bucket["files"])),
                 extra_metadata={
                     "study_description": str(getattr(dataset, "StudyDescription", "")).strip(),

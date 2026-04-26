@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -9,6 +10,14 @@ from typing import Any
 
 from app.infra.imaging.dicom_inventory import DicomSeriesRecord
 from app.infra.imaging.geometry import extract_geometry_metadata
+
+
+def _series_input_root(series_files: tuple[Path, ...]) -> Path:
+    if len(series_files) == 1:
+        return series_files[0].parent
+
+    common_root = os.path.commonpath([str(path.parent) for path in series_files])
+    return Path(common_root)
 
 
 def convert_dicom_series(
@@ -26,6 +35,7 @@ def convert_dicom_series(
     geometry = extract_geometry_metadata(series_record)
 
     if shutil.which("dcm2niix"):
+        series_root = _series_input_root(series_record.files)
         cmd = [
             "dcm2niix",
             "-z",
@@ -34,7 +44,7 @@ def convert_dicom_series(
             filename_stem,
             "-o",
             str(output_path),
-            str(series_record.files[0].parent),
+            str(series_root),
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         log_path.write_text(result.stdout + "\n" + result.stderr)

@@ -25,3 +25,26 @@ def record_derived_artifact(
     session.add(artifact)
     session.flush()
     return artifact
+
+
+def record_study_artifact(
+    session,
+    *,
+    study_id: int,
+    artifact_kind: str,
+    relative_path: str,
+    metadata: dict[str, Any],
+    storage_root: str = "derived",
+    series_id: int | None = None,
+) -> Artifact:
+    artifact = Artifact(
+        study_id=study_id,
+        series_id=series_id,
+        artifact_kind=artifact_kind,
+        storage_root=storage_root,
+        relative_path=relative_path,
+        source_metadata=metadata,
+    )
+    session.add(artifact)
+    session.flush()
+    return artifact

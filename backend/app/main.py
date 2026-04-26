@@ -7,7 +7,11 @@ from typing import Any
 
 try:
     from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
 except ModuleNotFoundError:
+    class CORSMiddleware:  # pragma: no cover - test stub only
+        pass
+
     @dataclass
     class Response:
         status_code: int
@@ -20,10 +24,17 @@ except ModuleNotFoundError:
         def __init__(self, title: str) -> None:
             self.title = title
             self._routes: dict[tuple[str, str], Any] = {}
+            self._event_handlers: dict[str, list[Any]] = {}
+
+        def add_middleware(self, _middleware_class: Any, **_kwargs: Any) -> None:
+            return None
 
         def include_router(self, router: Any, prefix: str = "") -> None:
             for method, path, endpoint in getattr(router, "routes", []):
                 self._routes[(method, f"{prefix}{path}")] = endpoint
+
+        def add_event_handler(self, event_type: str, handler: Any) -> None:
+            self._event_handlers.setdefault(event_type, []).append(handler)
 
         def handle_request(self, method: str, path: str) -> Response:
             endpoint = self._routes.get((method.upper(), path))
@@ -33,6 +44,7 @@ except ModuleNotFoundError:
 
 from app.api.router import router as api_router
 from app.core.config import get_settings
+from app.modules.jobs.worker_tasks import shutdown_background_workers
 
 
 _PATH_PATTERN = re.compile(r"([A-Za-z]:)?[/\\][^\s]+")
@@ -75,6 +87,14 @@ def create_app() -> FastAPI:
     configure_logging()
     settings = get_settings()
     app = FastAPI(title=settings.app_name)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=settings.frontend_origin_regex,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    app.add_event_handler("shutdown", shutdown_background_workers)
     app.include_router(api_router, prefix=settings.api_prefix)
     return app
 

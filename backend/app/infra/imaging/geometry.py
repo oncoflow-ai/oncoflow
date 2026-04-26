@@ -11,7 +11,7 @@ def extract_geometry_metadata(record: DicomSeriesRecord) -> dict[str, Any]:
     return {
         "spacing_mm": [value for value in (*in_plane, depth)],
         "orientation": list(record.orientation or ()),
-        "shape": [512, 512, len(record.files)],
+        "shape": [record.rows, record.columns, len(record.files)],
         "slice_count": len(record.files),
         "manufacturer": record.manufacturer,
     }

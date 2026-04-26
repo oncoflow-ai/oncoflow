@@ -24,6 +24,11 @@ describe('PatientTable', () => {
     expect(screen.getByText('Diagnosis')).toBeInTheDocument()
   })
 
+  it('renders patient rows with keyboard-accessible navigation affordances', () => {
+    renderTable()
+    expect(screen.getByRole('link', { name: /Open patient Sarah Jenkins/i })).toBeInTheDocument()
+  })
+
   it('shows skeleton rows when loading', () => {
     renderTable(true)
     expect(screen.queryByText('Sarah Jenkins')).not.toBeInTheDocument()

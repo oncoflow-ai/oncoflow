@@ -11,6 +11,7 @@ interface PatientRowProps {
 
 export default function PatientRow({ patient, latestScan, previousScan }: PatientRowProps) {
   const navigate = useNavigate()
+  const navigateToPatient = () => navigate(`/patients/${patient.id}`)
 
   const volumeDelta = latestScan && previousScan
     ? calcVolumeDeltaPct(latestScan.volumeMm3, previousScan.volumeMm3)
@@ -19,7 +20,16 @@ export default function PatientRow({ patient, latestScan, previousScan }: Patien
   return (
     <tr
       className="border-b border-border cursor-pointer hover:bg-surface2 transition-colors"
-      onClick={() => navigate(`/patients/${patient.id}`)}
+      onClick={navigateToPatient}
+      onKeyDown={event => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          navigateToPatient()
+        }
+      }}
+      tabIndex={0}
+      role="link"
+      aria-label={`Open patient ${patient.name}`}
     >
       <td className="px-3 py-3.5">
         <div className="font-sans font-semibold text-[15px] text-text1">{patient.name}</div>

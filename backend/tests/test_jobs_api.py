@@ -102,6 +102,37 @@ def test_submission_dispatches_identifiers_not_raw_bytes(monkeypatch: pytest.Mon
     assert "dicom" not in captured["extracted_relative_path"]
 
 
+def test_threaded_execution_mode_starts_background_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ONCOFLOW_JOB_EXECUTION_MODE", "threaded")
+    service = JobService()
+    captured: dict[str, str] = {}
+
+    def fake_execute_ingestion_job(*, job_id: str) -> None:
+        captured["job_id"] = job_id
+
+    class FakeThread:
+        def __init__(self, *, target, kwargs, daemon, name):
+            self._target = target
+            self._kwargs = kwargs
+            self.daemon = daemon
+            self.name = name
+
+        def start(self) -> None:
+            self._target(**self._kwargs)
+
+    monkeypatch.setattr("app.modules.jobs.service.execute_ingestion_job", fake_execute_ingestion_job)
+    monkeypatch.setattr("app.modules.jobs.service.threading.Thread", FakeThread)
+
+    dispatch = service._dispatch_worker(
+        job_id="job-123",
+        study_id="study-456",
+        extracted_relative_path="studies/demo/extracted",
+    )
+
+    assert dispatch.job_id == "job-123"
+    assert captured["job_id"] == "job-123"
+
+
 def test_get_job_status_returns_failure_payload(client) -> None:
     archive_bytes = _zip_bytes({"exam/file1.dcm": b"dicom"})
     submit_response = client.post(

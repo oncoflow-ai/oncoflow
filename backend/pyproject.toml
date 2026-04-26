@@ -18,6 +18,13 @@ dev = [
   "httpx>=0.28,<1.0",
   "pytest>=8.4,<9.0",
 ]
+ml = [
+  "nibabel>=5.3,<6.0",
+  "nnunetv2>=2.5,<3.0",
+  "numpy>=2.0,<3.0",
+  "scipy>=1.14,<2.0",
+  "torch>=2.5,<3.0",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import io
+import logging
+import threading
 import zipfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -8,11 +10,20 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from app.api.schemas.jobs import JobErrorPayload
+from app.core.config import get_settings
 from app.modules.artifacts.storage import resolve_artifact_location
 from app.modules.jobs.state_machine import transition_job
-from app.modules.jobs.worker_tasks import WorkerDispatchEnvelope, dispatch_ingestion_job
+from app.modules.jobs.worker_tasks import (
+    WorkerDispatchEnvelope,
+    dispatch_ingestion_job,
+    execute_ingestion_job,
+    forget_worker_thread,
+    register_worker_thread,
+)
 from app.infra.db.models import Artifact, Job, JobEvent, Study
 from app.infra.db.session import create_session_factory
+
+logger = logging.getLogger(__name__)
 
 SUPPORTED_ARCHIVE_TYPES = {
     "application/zip",
@@ -200,6 +211,32 @@ class JobService:
             session.commit()
 
     def _dispatch_worker(self, *, job_id: str, study_id: str, extracted_relative_path: str) -> WorkerDispatchEnvelope:
+        settings = get_settings()
+        if settings.job_execution_mode == "threaded":
+            logger.info(
+                "Dispatching ingestion job on background thread",
+                extra={"job_id": job_id, "study_id": study_id, "mode": settings.job_execution_mode},
+            )
+            thread = threading.Thread(
+                target=execute_ingestion_job,
+                kwargs={"job_id": job_id},
+                daemon=False,
+                name=f"oncoflow-job-{job_id[:8]}",
+            )
+            register_worker_thread(job_id, thread)
+            thread.start()
+            if not getattr(thread, "is_alive", lambda: False)():
+                forget_worker_thread(job_id)
+            return WorkerDispatchEnvelope(
+                job_id=job_id,
+                study_id=study_id,
+                extracted_relative_path=extracted_relative_path,
+            )
+
+        logger.info(
+            "Queued ingestion job for external worker dispatch",
+            extra={"job_id": job_id, "study_id": study_id, "mode": settings.job_execution_mode},
+        )
         return dispatch_ingestion_job(
             job_id=job_id,
             study_id=study_id,

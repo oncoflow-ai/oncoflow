@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 from uuid import UUID
 
 from app.infra.db.models import Series, Study
@@ -19,13 +20,63 @@ class PipelineResult:
     derived_artifact_count: int
 
 
+class DuplicateStudyInstanceUidError(ValueError):
+    pass
+
+
 def process_staged_study(*, session, study_public_id: UUID, extracted_relative_path: str) -> tuple[PipelineResult, StudyProfile]:
+    return process_staged_study_with_stages(
+        session=session,
+        study_public_id=study_public_id,
+        extracted_relative_path=extracted_relative_path,
+    )
+
+
+def process_staged_study_with_stages(
+    *,
+    session,
+    study_public_id: UUID,
+    extracted_relative_path: str,
+    stage_callback: Callable[[str], None] | None = None,
+) -> tuple[PipelineResult, StudyProfile]:
     study = session.query(Study).filter(Study.public_id == study_public_id).one()
     extracted_root = resolve_artifact_location("raw", extracted_relative_path).absolute_path
+
+    stage_callback = stage_callback or (lambda _: None)
+    stage_callback("profiling")
     profile = profile_staged_study(extracted_root)
+    study_instance_uids = {
+        series.record.study_instance_uid
+        for series in profile.series
+        if series.record.study_instance_uid
+    }
+    if len(study_instance_uids) > 1:
+        raise DuplicateStudyInstanceUidError("Uploaded series contain multiple StudyInstanceUID values")
+    first_processable = next(
+        (series.record for series in profile.series if series.classification == "processable"),
+        None,
+    )
+
+    stage_callback("validating")
     validation_messages = validate_study_profile(profile)
     if validation_messages:
         raise ValueError(validation_messages[0].message)
+
+    if first_processable and first_processable.study_instance_uid:
+        existing_study = (
+            session.query(Study)
+            .filter(
+                Study.study_instance_uid == first_processable.study_instance_uid,
+                Study.id != study.id,
+            )
+            .one_or_none()
+        )
+        if existing_study is not None:
+            raise DuplicateStudyInstanceUidError(
+                "StudyInstanceUID already exists for another uploaded study"
+            )
+        study.study_instance_uid = first_processable.study_instance_uid
+        study.staging_status = "profiled"
 
     derived_count = 0
     processable_series = 0
@@ -51,10 +102,13 @@ def process_staged_study(*, session, study_public_id: UUID, extracted_relative_p
         if profiled.classification != "processable":
             continue
 
+        stage_callback("converting")
         processable_series += 1
         relative_dir = f"studies/{study.public_id}/series/{series_row.id}"
         output_dir = resolve_artifact_location("derived", relative_dir).absolute_path
         result = convert_dicom_series(record, output_dir, filename_stem="volume")
+
+        stage_callback("persisting")
         record_derived_artifact(
             session,
             study_id=study.id,
@@ -81,6 +135,7 @@ def process_staged_study(*, session, study_public_id: UUID, extracted_relative_p
         )
         derived_count += 3
 
+    study.staging_status = "processed"
     session.flush()
     return PipelineResult(
         study_public_id=study_public_id,
