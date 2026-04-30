@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/authStore'
 import TopNav from '@/components/layout/TopNav'
+import BackendOperatorWorkspace from '@/components/dashboard/BackendOperatorWorkspace'
 import PatientTable from '@/components/patient/PatientTable'
 import ErrorBanner from '@/components/shared/ErrorBanner'
 import EmptyState from '@/components/shared/EmptyState'
@@ -23,10 +24,20 @@ export default function DashboardPage() {
   const scanQueries = useQuery({
     queryKey: ['all-scans', patients.map(p => p.id)],
     queryFn: async () => {
-      const results = await Promise.all(patients.map(p => getScans(p.id)))
+      const results = await Promise.allSettled(patients.map(p => getScans(p.id)))
       const map: Record<string, Scan[]> = {}
-      patients.forEach((p, i) => { map[p.id] = results[i] })
-      return map
+      const failedPatientIds: string[] = []
+
+      patients.forEach((patient, index) => {
+        const result = results[index]
+        if (result.status === 'fulfilled') {
+          map[patient.id] = result.value
+          return
+        }
+        failedPatientIds.push(patient.id)
+      })
+
+      return { map, failedPatientIds }
     },
     enabled: patients.length > 0,
   })
@@ -38,6 +49,9 @@ export default function DashboardPage() {
       p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q)
     )
   }, [patients, search])
+
+  const scansMap = scanQueries.data?.map ?? {}
+  const scanFetchFailed = (scanQueries.data?.failedPatientIds.length ?? 0) > 0
 
   return (
     <div className="min-h-screen bg-bg flex flex-col">
@@ -53,34 +67,44 @@ export default function DashboardPage() {
       />
 
       <main className="flex-1 px-5 py-6">
-        <div className="bg-surface border border-border">
-          {isError && (
-            <ErrorBanner
-              message="Failed to load patients."
-              onRetry={() => refetch()}
-            />
-          )}
+        <div className="flex flex-col gap-6">
+          <BackendOperatorWorkspace />
 
-          <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
-            <span className="text-[11px] font-mono text-text3 uppercase tracking-widest">
-              {filtered.length} patient{filtered.length !== 1 ? 's' : ''} · {physician?.name ?? 'Dr.'} · Oncology
-            </span>
-            <span className="text-[11px] font-mono text-text3">Sorted by last scan ↓</span>
-          </div>
+          <section className="bg-surface border border-border">
+            {isError && (
+              <ErrorBanner
+                message="Failed to load patients."
+                onRetry={() => refetch()}
+              />
+            )}
+            {scanFetchFailed && (
+              <ErrorBanner
+                message="Some scan histories could not be loaded."
+                onRetry={() => scanQueries.refetch()}
+              />
+            )}
 
-          {!isLoading && filtered.length === 0 ? (
-            <EmptyState
-              icon={<Users size={28} />}
-              title="No patients found"
-              description={search ? 'Try a different name or ID.' : 'No patients assigned to your account yet.'}
-            />
-          ) : (
-            <PatientTable
-              patients={filtered}
-              scansMap={scanQueries.data ?? {}}
-              loading={isLoading}
-            />
-          )}
+            <div className="px-5 py-3.5 border-b border-border flex items-center justify-between">
+              <span className="text-[11px] font-mono text-text3 uppercase tracking-widest">
+                Mock roster · {filtered.length} patient{filtered.length !== 1 ? 's' : ''} · {physician?.name ?? 'Dr.'} · Oncology
+              </span>
+              <span className="text-[11px] font-mono text-text3">Secondary dataset for UI scaffolding</span>
+            </div>
+
+            {!isLoading && filtered.length === 0 ? (
+              <EmptyState
+                icon={<Users size={28} />}
+                title="No patients found"
+                description={search ? 'Try a different name or ID.' : 'No patients assigned to your account yet.'}
+              />
+            ) : (
+              <PatientTable
+                patients={filtered}
+                scansMap={scansMap}
+                loading={isLoading || scanQueries.isLoading}
+              />
+            )}
+          </section>
         </div>
       </main>
     </div>
