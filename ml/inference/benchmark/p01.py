@@ -21,6 +21,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -359,6 +360,12 @@ def _write_csv(path: Path, rows: List[dict]) -> None:
 
 def _plot_volume_curve(rows: List[dict], out_path: Path) -> None:
     try:
+        cache_dir = out_path.parent / ".matplotlib-cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        os.environ.setdefault("MPLCONFIGDIR", str(cache_dir))
+        os.environ.setdefault("XDG_CACHE_HOME", str(cache_dir))
+        import matplotlib
+        matplotlib.use("Agg", force=True)
         import matplotlib.pyplot as plt  # type: ignore
     except ImportError:
         return

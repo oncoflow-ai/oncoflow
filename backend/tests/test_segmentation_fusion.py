@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
+import numpy as np
 import pytest
 
 from app.infra.db.models import Artifact, Series, Study
 from app.infra.db.session import create_session_factory
 from app.modules.segmentation.input_bundle import build_canonical_series_bundle
 from app.modules.segmentation.runner import get_runner, run_segmentation
-from app.modules.segmentation.runtime import ModelPackageMissingError
 
 
 @pytest.fixture(autouse=True)
@@ -95,7 +96,7 @@ def test_canonical_bundle_surfaces_geometry_mismatch_as_degradation() -> None:
     assert any("share geometry" in reason for reason in bundle.degradation_reasons)
 
 
-def test_runner_defaults_to_phase_two_baseline_and_rejects_unknown_models() -> None:
+def test_runner_defaults_to_oncoflow_baseline_and_rejects_unknown_models(monkeypatch: pytest.MonkeyPatch) -> None:
     session_factory = create_session_factory()
     with session_factory() as session:
         study = Study(
@@ -112,8 +113,33 @@ def test_runner_defaults_to_phase_two_baseline_and_rejects_unknown_models() -> N
 
         bundle = build_canonical_series_bundle(session=session, study_public_id=study.public_id)
 
-    with pytest.raises(ModelPackageMissingError, match="ONCOFLOW_NNUNET_MODEL_DIR"):
-        run_segmentation(bundle=bundle)
+    def fake_segment_study(nifti_path, cfg, *, output_dir, use_cache):
+        preprocessed_path = Path(output_dir) / "preprocessed.nii.gz"
+        preprocessed_path.parent.mkdir(parents=True, exist_ok=True)
+        preprocessed_path.write_bytes(b"not-read-for-empty-mask")
+        return SimpleNamespace(
+            ensemble_mask=np.zeros((1, 1, 1), dtype=np.uint8),
+            preprocessed_path=str(preprocessed_path),
+            output_dir=str(output_dir),
+            ensemble_volume_cm3=0.0,
+            panel_agreement=SimpleNamespace(
+                level="low",
+                mean_agreement=0.0,
+                models_used=(),
+                as_dict=lambda: {"agreement_level": "low"},
+            ),
+            adapter_meta={},
+            preprocessed_spacing=(1.0, 1.0, 1.0),
+        )
+
+    monkeypatch.setattr(
+        "app.modules.segmentation.oncoflow_runner.segment_study",
+        fake_segment_study,
+    )
+    result = run_segmentation(bundle=bundle)
+    assert result.runner.model_id == "nnunet-v2-resenc"
+    assert result.runner.execution_backend == "oncoflow-inference:local"
+    assert result.lesions == ()
 
     result = run_segmentation(bundle=bundle, warnings=("stub-test-path",))
     assert result.runner.model_id == "nnunet-v2-resenc"

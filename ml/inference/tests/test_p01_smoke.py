@@ -22,6 +22,7 @@ import json
 import numpy as np
 import pytest
 
+from ml.inference.benchmark.p01 import run_p01_benchmark
 from ml.inference.config import InferenceConfig
 from ml.inference.pipeline.longitudinal import compare_studies
 
@@ -89,3 +90,65 @@ def test_p01_longitudinal_smoke(p01_available, p01_root, tmp_path):
     assert loaded["metrics"]["volume_a_cm3"] == pytest.approx(
         round(m.volume_a_cm3, 4), abs=1e-3
     )
+
+
+def test_p01_ground_truth_benchmark_expected_outputs(p01_available, p01_root, tmp_path):
+    if not p01_available:
+        pytest.skip("P01 data not present")
+    _require_deps()
+
+    cfg = InferenceConfig(
+        enabled_models=(),
+        n4_bias_correction=False,
+        skull_strip=False,
+        isotropic_spacing_mm=1.0,
+        cache_dir=tmp_path / "cache",
+    )
+
+    result = run_p01_benchmark(
+        p01_root,
+        tmp_path / "benchmark",
+        cfg=cfg,
+        use_gt_masks=True,
+    )
+
+    seg_rows = result["segmentation"]
+    assert len(seg_rows) == 5
+    expected_gt_volumes = {
+        "baseline": 14.815,
+        "fu1": 3.101,
+        "fu2": 3.911,
+        "fu3": 2.285,
+        "fu4": 1.264,
+    }
+    for row in seg_rows:
+        assert row["model"] == "ground_truth"
+        assert row["dice"] == 1.0
+        assert row["iou"] == 1.0
+        assert row["hd95_mm"] == 0.0
+        assert row["volume_cm3"] == pytest.approx(
+            expected_gt_volumes[row["timepoint"]], abs=1e-3
+        )
+
+    long_rows = result["longitudinal"]
+    assert [row["pair"] for row in long_rows] == [
+        "baseline_vs_fu1",
+        "baseline_vs_fu2",
+        "baseline_vs_fu3",
+        "baseline_vs_fu4",
+    ]
+    for row in long_rows:
+        assert row["volume_a_cm3"] == pytest.approx(
+            expected_gt_volumes["baseline"], abs=1e-3
+        )
+        assert row["volume_b_cm3"] > 0.0
+        assert row["delta_cm3"] < 0.0
+        assert row["pct_change"] < -25.0
+        assert row["registration_ncc_after"] >= 0.95
+        assert row["interpretation_level"] == "response"
+        assert row["registration_backend"] in {"sitk", "ants"}
+
+    out_dir = tmp_path / "benchmark"
+    assert (out_dir / "segmentation_leaderboard.csv").exists()
+    assert (out_dir / "longitudinal_results.csv").exists()
+    assert (out_dir / "summary.json").exists()

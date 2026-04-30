@@ -5,7 +5,6 @@ from typing import Protocol
 
 from app.modules.benchmark.model_registry import get_model_spec
 from app.modules.segmentation.contracts import BoundingBox3D, CanonicalSeriesBundle, ManagedArtifactRef, RunnerProvenance
-from app.modules.segmentation.runtime import resolve_runtime_readiness
 
 
 @dataclass(frozen=True)
@@ -15,6 +14,8 @@ class NormalizedLesionPrediction:
     confidence_score: float
     occupied_voxels_ijk: tuple[tuple[int, int, int], ...] = ()
     warning_reasons: tuple[str, ...] = ()
+    source_mask_path: str | None = None
+    metadata: dict[str, object] | None = None
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.confidence_score <= 1.0:
@@ -60,9 +61,9 @@ class StubAutomaticRunner:
 def get_runner(*, model_id: str = "nnunet-v2-resenc", predictions: tuple[NormalizedLesionPrediction, ...] = (), warnings: tuple[str, ...] = ()) -> SegmentationRunner:
     get_model_spec(model_id)
     if not predictions and not warnings and model_id == "nnunet-v2-resenc":
-        from app.modules.segmentation.nnunet_runner import NnUnetAutomaticRunner
+        from app.modules.segmentation.oncoflow_runner import OncoFlowInferenceRunner
 
-        return NnUnetAutomaticRunner(runtime=resolve_runtime_readiness(model_id=model_id))
+        return OncoFlowInferenceRunner(model_id=model_id)
     return StubAutomaticRunner(model_id=model_id, predictions=predictions, warnings=warnings)
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from shutil import copy2
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -29,6 +30,17 @@ def _write_placeholder(relative_path: str, *, payload: bytes | str = b"") -> Non
         location.absolute_path.write_text(payload)
     else:
         location.absolute_path.write_bytes(payload)
+
+
+def _persist_mask_artifact(relative_path: str, *, source_mask_path: str | None) -> None:
+    location = resolve_artifact_location("derived", relative_path)
+    location.absolute_path.parent.mkdir(parents=True, exist_ok=True)
+    if source_mask_path and Path(source_mask_path).exists():
+        source = Path(source_mask_path).resolve()
+        if source != location.absolute_path.resolve():
+            copy2(source, location.absolute_path)
+        return
+    _write_placeholder(relative_path, payload=b"mask")
 
 
 def run_study_segmentation(
@@ -123,8 +135,11 @@ def run_study_segmentation(
 
     for lesion in lesions:
         relative_path = lesion.mask_artifact.relative_path
-        _write_placeholder(relative_path, payload=b"mask")
         prediction = predictions_by_lesion_id[lesion.lesion_id]
+        _persist_mask_artifact(
+            relative_path,
+            source_mask_path=prediction.source_mask_path,
+        )
         record_study_artifact(
             session,
             study_id=study.id,
@@ -139,6 +154,7 @@ def run_study_segmentation(
                 "needs_review": lesion.qc.flagged_for_review,
                 "geometry": primary_geometry,
                 "occupied_voxels_ijk": [list(voxel) for voxel in prediction.occupied_voxels_ijk],
+                "inference": prediction.metadata or {},
             },
         )
         persisted_count += 1
@@ -166,6 +182,12 @@ def run_study_segmentation(
                 "needs_review": case_result.needs_review,
                 "case_qc_reasons": list(case_result.case_qc_reasons),
                 "lesion_ids": [lesion.lesion_id for lesion in case_result.lesions],
+                "runner": {
+                    "model_id": case_result.runner.model_id,
+                    "runner_version": case_result.runner.runner_version,
+                    "execution_backend": case_result.runner.execution_backend,
+                    "warnings": list(case_result.runner.warnings),
+                },
             }
         ),
     )
@@ -179,6 +201,12 @@ def run_study_segmentation(
             "needs_review": case_result.needs_review,
             "case_qc_reasons": list(case_result.case_qc_reasons),
             "lesion_count": len(case_result.lesions),
+            "runner": {
+                "model_id": case_result.runner.model_id,
+                "runner_version": case_result.runner.runner_version,
+                "execution_backend": case_result.runner.execution_backend,
+                "warnings": list(case_result.runner.warnings),
+            },
         },
     )
     persisted_count += 1

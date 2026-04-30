@@ -22,10 +22,16 @@ ml = [
   "nibabel>=5.3,<6.0",
   "nnunetv2>=2.5,<3.0",
   "numpy>=2.0,<3.0",
+  "PyYAML>=6.0,<7.0",
   "scipy>=1.14,<2.0",
+  "SimpleITK>=2.3,<3.0",
   "torch>=2.5,<3.0",
+  "typer>=0.12,<1.0",
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+pythonpath = [".", ".."]
 testpaths = ["tests"]
+
+[tool.setuptools]
+packages = ["app"]

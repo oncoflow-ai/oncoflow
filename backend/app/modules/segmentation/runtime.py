@@ -11,6 +11,7 @@ from app.modules.benchmark.model_registry import get_model_spec
 SUPPORTED_MODEL_IDS = {"nnunet-v2-resenc"}
 SUPPORTED_DEVICES = {"cpu", "mps", "cuda"}
 RUNTIME_DEPENDENCIES = ("numpy", "nibabel", "torch", "nnunetv2")
+INFERENCE_CORE_DEPENDENCIES = ("numpy", "nibabel", "SimpleITK")
 
 
 class SegmentationRuntimeError(RuntimeError):
@@ -50,6 +51,69 @@ class RuntimeReadiness:
     @property
     def runner_version(self) -> str:
         return self.weights_digest[:12]
+
+
+def _enabled_inference_models(settings: Settings) -> tuple[str, ...]:
+    return tuple(
+        model.strip()
+        for model in settings.inference_enabled_models.split(",")
+        if model.strip()
+    )
+
+
+def _inference_dependency_gaps() -> tuple[str, ...]:
+    return tuple(name for name in INFERENCE_CORE_DEPENDENCIES if find_spec(name) is None)
+
+
+def get_inference_readiness(*, settings: Settings | None = None) -> dict[str, object]:
+    settings = settings or get_settings()
+    enabled_models = _enabled_inference_models(settings)
+    core_dependency_gaps = _inference_dependency_gaps()
+    payload: dict[str, object] = {
+        "backend": settings.inference_backend,
+        "device": settings.inference_device,
+        "enabled_models": list(enabled_models),
+        "weights_dir": settings.inference_weights_dir,
+        "cache_dir": settings.inference_cache_dir,
+        "core_dependency_gaps": list(core_dependency_gaps),
+        "models": {},
+    }
+    if core_dependency_gaps:
+        payload["status"] = "degraded"
+        return payload
+
+    try:
+        from ml.inference.config import InferenceConfig
+        from ml.inference.adapters import build_adapter
+
+        cfg = InferenceConfig(
+            backend=settings.inference_backend,
+            device=settings.inference_device,
+            enabled_models=enabled_models,
+            weights_dir=Path(settings.inference_weights_dir).expanduser()
+            if settings.inference_weights_dir
+            else InferenceConfig().weights_dir,
+            cache_dir=Path(settings.inference_cache_dir).expanduser()
+            if settings.inference_cache_dir
+            else InferenceConfig().cache_dir,
+            n4_bias_correction=settings.inference_n4_bias_correction,
+            skull_strip=settings.inference_skull_strip,
+            isotropic_spacing_mm=settings.inference_isotropic_spacing_mm,
+        )
+        models: dict[str, dict[str, object]] = {}
+        for model_name in enabled_models:
+            try:
+                adapter = build_adapter(model_name, cfg)
+                models[model_name] = {"available": adapter.is_available()}
+            except Exception as exc:
+                models[model_name] = {"available": False, "error": str(exc)}
+        payload["models"] = models
+        payload["resolved_device"] = cfg.resolve_device()
+        payload["status"] = "ready" if any(m.get("available") for m in models.values()) else "degraded"
+    except Exception as exc:
+        payload["status"] = "degraded"
+        payload["error"] = str(exc)
+    return payload
 
 
 def is_real_runner_configured(*, settings: Settings | None = None, model_id: str = "nnunet-v2-resenc") -> bool:

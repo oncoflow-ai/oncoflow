@@ -17,6 +17,7 @@ except ModuleNotFoundError:
 from app.core.config import get_settings
 from app.api.routes.jobs import router as jobs_router
 from app.api.routes.results import router as results_router
+from app.modules.segmentation.runtime import get_inference_readiness
 
 router = APIRouter()
 
@@ -27,12 +28,13 @@ def healthcheck() -> dict[str, str]:
 
 
 @router.get("/ready", tags=["system"])
-def readiness() -> dict[str, str]:
+def readiness() -> dict[str, object]:
     settings = get_settings()
     return {
         "status": "ready",
         "environment": settings.environment,
         "queue": settings.job_execution_mode,
+        "inference": get_inference_readiness(settings=settings),
     }
 
 

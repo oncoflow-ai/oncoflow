@@ -26,6 +26,15 @@ class Settings:
     redis_password: str | None = None
     nnunet_model_dir: str | None = None
     nnunet_device: Literal["cpu", "mps", "cuda"] = "cpu"
+    inference_backend: Literal["local", "gpu-prod"] = "local"
+    inference_enabled_models: str = "nnunet,medgemma,sam3"
+    inference_device: Literal["auto", "cuda", "mps", "cpu"] = "auto"
+    inference_weights_dir: str | None = None
+    inference_cache_dir: str | None = None
+    inference_input_slot: Literal["t1_post_or_fs", "t1_pre", "t2_or_stir"] = "t1_post_or_fs"
+    inference_n4_bias_correction: bool = False
+    inference_skull_strip: bool = False
+    inference_isotropic_spacing_mm: float = 1.0
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -40,6 +49,9 @@ class Settings:
             if raw is None:
                 return default
             return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+        def get_float(name: str, default: float) -> float:
+            return float(os.getenv(name, str(default)))
 
         def get_optional_str(name: str) -> str | None:
             raw = os.getenv(name)
@@ -70,6 +82,21 @@ class Settings:
             redis_password=os.getenv("ONCOFLOW_REDIS_PASSWORD"),
             nnunet_model_dir=get_optional_str("ONCOFLOW_NNUNET_MODEL_DIR"),
             nnunet_device=get_str("ONCOFLOW_NNUNET_DEVICE", cls.nnunet_device),  # type: ignore[arg-type]
+            inference_backend=get_str("OFLOW_BACKEND", cls.inference_backend),  # type: ignore[arg-type]
+            inference_enabled_models=get_str("OFLOW_ENABLED_MODELS", cls.inference_enabled_models),
+            inference_device=get_str("OFLOW_DEVICE", cls.inference_device),  # type: ignore[arg-type]
+            inference_weights_dir=get_optional_str("OFLOW_WEIGHTS_DIR"),
+            inference_cache_dir=get_optional_str("OFLOW_CACHE_DIR"),
+            inference_input_slot=get_str("OFLOW_INPUT_SLOT", cls.inference_input_slot),  # type: ignore[arg-type]
+            inference_n4_bias_correction=get_bool(
+                "OFLOW_N4_BIAS_CORRECTION",
+                cls.inference_n4_bias_correction,
+            ),
+            inference_skull_strip=get_bool("OFLOW_SKULL_STRIP", cls.inference_skull_strip),
+            inference_isotropic_spacing_mm=get_float(
+                "OFLOW_ISOTROPIC_SPACING_MM",
+                cls.inference_isotropic_spacing_mm,
+            ),
         )
 
 
