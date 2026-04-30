@@ -29,7 +29,7 @@ export default function PatientTable({ patients, scansMap, loading = false }: Pa
         {loading
           ? Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)
           : patients.map(patient => {
-              const scans = (scansMap[patient.id] ?? []).sort(
+              const scans = [...(scansMap[patient.id] ?? [])].sort(
                 (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
               )
               const latest = scans[scans.length - 1]

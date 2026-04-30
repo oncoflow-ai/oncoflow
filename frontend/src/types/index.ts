@@ -44,3 +44,60 @@ export interface Physician {
   name: string
   initials: string
 }
+
+export type BackendJobStatus = 'queued' | 'running' | 'failed' | 'completed'
+
+export interface BackendJobError {
+  code: string
+  message: string
+  details?: Record<string, unknown> | null
+}
+
+export interface BackendJobSubmission {
+  jobId: string
+  studyId: string
+  status: BackendJobStatus
+  stage: string
+  submittedAt: string
+}
+
+export interface BackendJobStatusResponse extends BackendJobSubmission {
+  error: BackendJobError | null
+}
+
+export interface BackendArtifactRef {
+  artifactKind: string
+  storageRoot: string
+  relativePath: string
+}
+
+export interface BackendBoundingBox3D {
+  xMin: number
+  xMax: number
+  yMin: number
+  yMax: number
+  zMin: number
+  zMax: number
+}
+
+export interface BackendLesionMeasurements {
+  volumeMm3: number
+  longestDiameterMm: number
+}
+
+export interface BackendLesionResult {
+  lesionId: string
+  boundingBox: BackendBoundingBox3D
+  measurements: BackendLesionMeasurements
+  maskArtifact: BackendArtifactRef
+  reviewArtifacts: BackendArtifactRef[]
+  metadata?: Record<string, unknown> | null
+}
+
+export interface BackendCaseResult {
+  studyId: string
+  resultArtifact: BackendArtifactRef
+  lesions: BackendLesionResult[]
+  needsReview: boolean
+  caseQcReasons: string[]
+}

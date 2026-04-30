@@ -1,0 +1,37 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Outputs (keep directory structure, ignore actual runs)
+outputs/cli_runs/*
+!outputs/cli_runs/.gitkeep
+outputs/p01_benchmark/*
+!outputs/p01_benchmark/.gitkeep
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Model weights and large files
+*.pth
+*.ckpt
+*.h5
+*.pkl
+weights/
+cache/
