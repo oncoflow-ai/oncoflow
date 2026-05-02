@@ -43,3 +43,6 @@ Thumbs.db
 docs/superpowers/
 .superpowers/
 .planning/
+
+# Backend local runtime / cache (staging, derived artifacts)
+backend/var/
