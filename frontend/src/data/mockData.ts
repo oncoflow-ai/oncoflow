@@ -2,6 +2,17 @@ import type { Patient, Scan, Summary } from '@/types'
 
 export const mockPatients: Patient[] = [
   {
+    id: 'P-9001',
+    name: 'Demo Patient P01',
+    dob: '1975-06-01',
+    diagnosis: 'Demo lesion (sample BraTS volumes)',
+    diagnosisLocation: 'See repo data/P01',
+    assignedPhysicianId: 'DR-001',
+    status: 'active',
+    scanCount: 0,
+    lastScanDate: '2024-01-01',
+  },
+  {
     id: 'P-1029',
     name: 'Sarah Jenkins',
     dob: '1994-07-22',
@@ -92,6 +103,7 @@ export const mockPatients: Patient[] = [
 ]
 
 export const mockScans: Record<string, Scan[]> = {
+  'P-9001': [],
   'P-1029': [
     { id: 'SCN-0039', patientId: 'P-1029', studyLabel: 'MRI Study #1', date: '2025-09-14', modality: 'MRI', sequence: 'T1W', plane: 'AXIAL', sliceCount: 128, resolution: '1.2mm iso', volumeMm3: 18400, maxDiameterMm: 34.2, isAnnotated: true },
     { id: 'SCN-0040', patientId: 'P-1029', studyLabel: 'MRI Study #2', date: '2025-12-02', modality: 'MRI', sequence: 'T1W', plane: 'AXIAL', sliceCount: 128, resolution: '1.2mm iso', volumeMm3: 15200, maxDiameterMm: 31.1, isAnnotated: true },
@@ -137,6 +149,16 @@ export const mockScans: Record<string, Scan[]> = {
 }
 
 export const mockSummaries: Record<string, Summary> = {
+  'P-9001': {
+    patientId: 'P-9001',
+    generatedAt: '2026-05-02T12:00:00Z',
+    model: 'Demo narrative',
+    text: `This roster row pairs with **data/P01** sample volumes for live uploads. Sign in as Radiologist, select Demo Patient P01, upload baseline and follow-up NIfTI volumes plus masks per DEMO.md, then open Longitudinal Comparison. Mock scans above stay empty until you rely on demo MRI scaffolding separately.`,
+    recommendations: [
+      'Follow longitudinal metrics after radiologist uploads complete.',
+      'Discuss treatment planning only with your clinical team.',
+    ],
+  },
   'P-1029': {
     patientId: 'P-1029',
     generatedAt: '2026-03-09T08:14:00Z',

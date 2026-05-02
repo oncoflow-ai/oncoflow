@@ -3,9 +3,9 @@ import { getScans } from '@/api/scans'
 import { getSummary } from '@/api/reports'
 
 describe('getPatients()', () => {
-  it('returns 8 patients', async () => {
+  it('returns 9 patients', async () => {
     const patients = await getPatients()
-    expect(patients).toHaveLength(8)
+    expect(patients).toHaveLength(9)
   })
 })
 

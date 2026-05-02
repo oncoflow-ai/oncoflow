@@ -70,6 +70,8 @@ You should see the server listening on `http://localhost:8000`.
 
 ### 1b. Frontend
 
+The SPA defaults to `http://localhost:8000` as the API base URL ([`frontend/src/api/client.ts`](frontend/src/api/client.ts)). If your API runs elsewhere, copy [`frontend/.env.example`](frontend/.env.example) to `frontend/.env.local` and set `VITE_API_URL`.
+
 In a second terminal, from the repo root:
 
 ```bash
@@ -82,64 +84,69 @@ Vite serves the app on `http://localhost:5173`.
 
 ### Sanity check
 
-In a browser tab, hit `http://localhost:8000/api/v1/ready` — you should see
-a JSON object with `"status": "ready"` and the configured backend
-(`"local"`) and enabled models (`"nnunet"`).
+From the repo root you can run:
+
+```bash
+./scripts/check-demo-ready.sh
+```
+
+Or manually open `http://localhost:8000/api/v1/ready` — you should see a JSON object with `"status": "ready"` and the configured backend (`"local"`) and enabled models (`"nnunet"`).
 
 ---
 
-## 2. UI walkthrough
+## 2. UI walkthrough (roles)
 
-### Step 1 — Sign in
+The app uses **mock sign-in with roles**. Open `http://localhost:5173/auth`.
 
-Open `http://localhost:5173/auth`.
+| Role | User ID example | Password | Where you land |
+|------|-----------------|----------|----------------|
+| **Radiologist** | any non-empty text | any non-empty | `/radiologist` — roster + upload workspace |
+| **Doctor** | any non-empty text | any non-empty | `/doctor` — patient roster |
+| **Patient** | `P-9001` or `P-1029` (must match `P-` + digits) | any non-empty | `/patient` — read-only portal |
 
-- Enter any email (e.g. `dr.cohen@ichilov.gov.il`) and any password.
-- Click **Sign In**.
+> Auth is mock-only; credentials are not validated beyond non-empty fields (patient role checks the ID pattern).
 
-> Auth is mock-only for this demo; any non-empty values are accepted.
+**Recommended narrative for judges:** Radiologist uploads P01 volumes → longitudinal comparison → Doctor opens a chart → Patient portal as optional fourth beat.
 
-You will land on the dashboard.
+---
 
-### Step 2 — Upload the baseline scan
+### Path A — Radiologist (upload + pipeline)
 
-Scroll to the **Operator Workspace** card on the dashboard.
+Use this path for Steps A2–A6 below.
 
-1. Confirm the **Scan Format** toggle is on **NIfTI (recommended)**.
-   The scan and mask file pickers intentionally do **not** filter by extension,
-   so `.nii.gz` files are never hidden by the browser; only `.nii` / `.nii.gz`
-   names are accepted when you click **Upload And Start**.
-2. Under **NIfTI Scan (.nii / .nii.gz)**, pick:
-   `data/P01/BraTS/baseline/t1c.nii.gz`
-3. Under **Tumor Mask (optional, .nii.gz)**, pick:
-   `data/P01/tumor segmentation/P01_tumor_mask_baseline.nii.gz`
-4. **Source Label**: `Patient P01 - Baseline`
+#### Step A1 — Sign in as Radiologist
+
+1. Choose **Radiologist — upload & segmentation**.
+2. Enter any User ID / Email and password → **Continue**.
+3. You should be on **`/radiologist`**.
+
+#### Step A2 — Select demo roster patient
+
+Click the row **Demo Patient P01** (`P-9001`). The upload workspace appears below with **Source Label** prefilled (`P-9001 · Demo Patient P01`). Clear or edit **Source Label** when pasting demo strings below so the field matches exactly (see Troubleshooting if labels concatenate).
+
+#### Step A3 — Upload the baseline scan
+
+1. Confirm **Scan Format** is **NIfTI (recommended)**.
+2. **NIfTI Scan**: `data/P01/BraTS/baseline/t1c.nii.gz`
+3. **Tumor Mask**: `data/P01/tumor segmentation/P01_tumor_mask_baseline.nii.gz`
+4. **Source Label**: `Patient P01 - Baseline` (clear the prefilled line first if needed).
 5. **Acquisition Date**: `2024-01-15`
-6. Click **Upload And Start**.
+6. **Upload And Start**.
 
-The right-hand "Active run status" card shows the job moving from
-`queued` → `running` → `completed`. With the bundled mask this typically
-finishes in under a second.
+The **Active run status** panel moves through `queued` → `running` → `completed` (typically under a second with the bundled mask).
 
-### Step 3 — Inspect the baseline result
+#### Step A4 — Inspect the baseline result
 
-Once the run is `completed`, scroll to the **Results and lesion packaging**
-panel. You should see:
+In **Results and lesion packaging**:
 
-- A summary block: study ID, lesion count (1), review state (CLEAR), QC reasons.
-- A **Lesion** card with:
-  - `lesion-001`
-  - **Volume** (mm³) and **longest diameter** (mm) computed from the mask.
-  - The bounding box JSON.
-  - The mask artifact path under
-    `derived/studies/<studyId>/lesions/lesion-001.nii.gz`.
+- Summary block: study ID, lesion count, review state, QC reasons.
+- **Lesion** card: `lesion-001`, volume, longest diameter, bounding box, mask path under `derived/studies/<studyId>/lesions/`.
 
-> Make a mental note (or copy) of the **Study ID** — you'll see it again in
-> the comparison dropdown.
+Note the **Study ID** for the comparison dropdowns.
 
-### Step 4 — Upload the follow-up scan
+#### Step A5 — Upload the follow-up scan
 
-Repeat Step 2 with:
+Repeat Step A3 pattern with:
 
 - **Scan**: `data/P01/BraTS/fu1/t1c.nii.gz`
 - **Mask**: `data/P01/tumor segmentation/P01_tumor_mask_fu1.nii.gz`
@@ -148,75 +155,82 @@ Repeat Step 2 with:
 
 Wait until status is `completed`.
 
-### Step 5 — Run the longitudinal comparison
+#### Step A6 — Run the longitudinal comparison
 
-Scroll one section further to the **Longitudinal Comparison** panel
-("Compare two scans, see tumor change").
+On the same page, scroll to **Longitudinal Comparison** (“Compare two scans, see tumor change”).
 
-1. The two studies you just uploaded appear in the dropdowns
-   (label · acquisition date). If not, click **Refresh studies**.
-2. **Baseline Study**: pick `Patient P01 - Baseline · 2024-01-15`.
-3. **Follow-up Study**: pick `Patient P01 - FU1 · 2024-04-10`.
-4. Click **Run Comparison**.
+1. Dropdowns list studies by backend labels/dates (refresh automatically). Pick **Baseline** `Patient P01 - Baseline · 2024-01-15` and **Follow-up** `Patient P01 - FU1 · 2024-04-10`.
+2. **Run Comparison**.
 
-The status card on the right shows a spinner while the backend runs
-preprocessing → registration → metrics. With provided masks this finishes
-in a few seconds.
+Metrics populate: volumes + Δ + % change, RECIST-style diameters and ratio, Dice / HD95 / registration NCC, **Interpretation** banner, and raw JSON payload.
 
-### Step 6 — Read the growth metrics
+After segmentation completes, the UI may also trigger an automatic comparison when ≥2 studies have results (optional toast).
 
-When the comparison returns, the lower **Comparison metrics** section
-populates with three rows of stat blocks:
+#### Step A7 — (Optional) Third timepoint
 
-- **Volumes**: baseline volume, follow-up volume, Δ volume (cm³,
-  color-coded growth/shrinkage), and % change with an interpretation
-  badge (`stable`, `progressive`, `response`, or `minor change`).
-- **RECIST**: longest in-plane diameter for baseline (A) and follow-up (B),
-  the RECIST ratio, and the volume growth rate (cm³/day).
-- **Overlap & registration**: Dice, HD95 (mm), registration NCC, and the
-  registration method (e.g. `affine`).
+Upload FU2 (`data/P01/BraTS/fu2/t1c.nii.gz`, mask `P01_tumor_mask_fu2.nii.gz`, date `2024-07-15`, label `Patient P01 - FU2`). Then swap **Follow-up** to FU2 or compare FU1 → FU2.
 
-The **Interpretation** banner shows the RECIST-style flag
-(`Progressive disease`, `Stable disease`, `Response (>=25% reduction)`,
-or similar). The full backend payload is available in the collapsible
-**Raw comparison payload** block.
+---
 
-### Step 7 — (Optional) Add another follow-up
+### Path B — Doctor (clinical roster)
 
-Repeat Step 4 with `data/P01/BraTS/fu2/t1c.nii.gz` and
-`P01_tumor_mask_fu2.nii.gz` (date `2024-07-15`). Then in the Comparison
-panel, swap the **Follow-up Study** dropdown to FU2 and rerun. You can
-demo "tracked over multiple visits" by comparing baseline → FU1, then
-baseline → FU2, then FU1 → FU2.
+#### Step B1 — Sign in as Doctor
+
+Land on **`/doctor`**. Search or scroll the roster.
+
+#### Step B2 — Open a patient chart
+
+Click any patient → **`/doctor/patients/:id`**.
+
+- **Scans & viewer**: mock longitudinal imaging + MRI sidebar (slice viewer).
+- **Longitudinal**: loads **live backend studies** (same list as radiologist); roster rows are **not** wired to backend UUIDs yet — every completed study appears in the selectors. Complete Path A first so labeled P01 studies appear.
+- **Reports**: mock generate/list only.
+
+---
+
+### Path C — Patient portal
+
+#### Step C1 — Sign in as Patient
+
+Use Patient ID **`P-9001`** or **`P-1029`** plus any password.
+
+Shows mock scans, AI summary text, recommendations, and mock reports list.
 
 ---
 
 ## How the demo maps to the codebase
 
-| UI action | Backend endpoint | Code |
-|---|---|---|
+| UI action | Backend / route | Code |
+|-----------|-----------------|------|
+| Role routing | `/radiologist`, `/doctor`, `/patient` | [`frontend/src/router.tsx`](frontend/src/router.tsx), [`frontend/src/lib/routes.ts`](frontend/src/lib/routes.ts) |
+| Radiologist roster + upload | `/radiologist` | [`frontend/src/pages/RadiologistWorkspacePage.tsx`](frontend/src/pages/RadiologistWorkspacePage.tsx), [`frontend/src/components/dashboard/BackendOperatorWorkspace.tsx`](frontend/src/components/dashboard/BackendOperatorWorkspace.tsx) |
+| Doctor roster | `/doctor` | [`frontend/src/pages/DoctorDashboardPage.tsx`](frontend/src/pages/DoctorDashboardPage.tsx) |
+| Doctor patient chart | `/doctor/patients/:id` | [`frontend/src/pages/DoctorPatientDashboardPage.tsx`](frontend/src/pages/DoctorPatientDashboardPage.tsx) |
+| Patient portal | `/patient` | [`frontend/src/pages/PatientPortalPage.tsx`](frontend/src/pages/PatientPortalPage.tsx) |
 | Upload scan + mask | `POST /api/v1/jobs/nifti-segmentation` | [`backend/app/api/routes/jobs.py`](backend/app/api/routes/jobs.py), [`backend/app/modules/segmentation/nifti_pipeline.py`](backend/app/modules/segmentation/nifti_pipeline.py) |
 | Status polling | `GET /api/v1/jobs/{jobId}` | same |
 | Result fetch | `GET /api/v1/results/{studyId}` | [`backend/app/modules/results/service.py`](backend/app/modules/results/service.py) |
 | Study list | `GET /api/v1/results/studies` | [`backend/app/modules/results/studies_listing.py`](backend/app/modules/results/studies_listing.py) |
 | Run comparison | `POST /api/v1/jobs/longitudinal-comparison` | [`backend/app/modules/results/comparisons.py`](backend/app/modules/results/comparisons.py) calling `ml.inference.compare_studies` |
 
-Demo is intentionally narrow; out of scope: real authentication, patient
-CRUD, DICOM conversion (`dcm2niix`), 3D viewer, and reports/PDF export.
+Demo scope: mock authentication and roster; live ingestion and comparison against SQLite + local disk. Out of scope: production auth, patient–study linkage in DB, DICOM conversion (`dcm2niix`), volumetric 3D viewer, PDF export.
+
+---
+
+## Presenter checklist (dry run)
+
+1. Backend env includes **`ONCOFLOW_JOB_EXECUTION_MODE=threaded`**.
+2. `./scripts/check-demo-ready.sh` or manual **`GET /api/v1/ready`** succeeds.
+3. Frontend loads **`/auth`**; radiologist path completes Path A steps A3–A6 at least once.
+4. Optional: doctor longitudinal tab lists P01 studies after uploads; patient **`P-9001`** loads portal.
 
 ---
 
 ## Troubleshooting
 
-- **Status stuck at `queued`** — make sure
-  `ONCOFLOW_JOB_EXECUTION_MODE=threaded` is set in the same shell that
-  started `uvicorn`. The default `deferred` mode never runs jobs locally.
-- **`comparison failed: ...`** — re-check that both studies were uploaded
-  with both a scan AND a mask file. The comparison endpoint requires the
-  `nifti-source` artifact on each side and prefers the `tumor-mask-input`
-  artifact to bypass segmentation.
-- **`ml.inference is not available`** — install the ml extras:
-  `pip install -r ml/inference/requirements.txt`.
-- **CORS errors in the browser** — the default origin regex matches
-  `localhost`/`127.0.0.1`. If you serve the frontend from another host,
-  set `ONCOFLOW_FRONTEND_ORIGIN_REGEX` accordingly.
+- **Status stuck at `queued`** — make sure `ONCOFLOW_JOB_EXECUTION_MODE=threaded` is set in the same shell that started `uvicorn`. The default `deferred` mode never runs jobs locally.
+- **`comparison failed: ...`** — both studies need scan **and** mask. The comparison endpoint expects `nifti-source` and prefers `tumor-mask-input`.
+- **`ml.inference is not available`** — install ML extras: `pip install -r ml/inference/requirements.txt`.
+- **CORS errors** — default origin regex matches `localhost` / `127.0.0.1`. Otherwise set `ONCOFLOW_FRONTEND_ORIGIN_REGEX`.
+- **Wrong API host from frontend** — set `VITE_API_URL` via `.env.local` (see [`frontend/.env.example`](frontend/.env.example)).
+- **Source label looks concatenated after selecting a patient** — clear the **Source Label** field before typing demo labels (`Patient P01 - Baseline`, etc.).

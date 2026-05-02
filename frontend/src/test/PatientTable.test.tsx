@@ -12,7 +12,7 @@ function renderTable(loading = false) {
 }
 
 describe('PatientTable', () => {
-  it('renders all 8 patient rows', () => {
+  it('renders all 9 patient rows', () => {
     renderTable()
     expect(screen.getByText('Sarah Jenkins')).toBeInTheDocument()
     expect(screen.getByText('David Levi')).toBeInTheDocument()

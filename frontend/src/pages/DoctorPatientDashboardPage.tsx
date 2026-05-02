@@ -116,7 +116,7 @@ export default function DoctorPatientDashboardPage() {
   const scopeCopy =
     patient?.linkedStudyIds?.length
       ? undefined
-      : 'This roster patient is not linked to specific backend study IDs yet — the selector lists every completed study from your demo backend.'
+      : 'Studies here come from the live demo backend (all completed analyses). Complete radiologist uploads first so P01 labels appear; roster patients are not linked to backend UUIDs until that feature ships.'
 
   if (patientQuery.isError) {
     return (
