@@ -4,15 +4,18 @@ from dataclasses import dataclass
 import logging
 import threading
 import time
+from pathlib import Path
 from uuid import UUID
 
 from app.api.schemas.jobs import JobErrorPayload
 from app.infra.db.models import Artifact, Job, JobEvent, Study
 from app.infra.db.session import create_session_factory
 from app.core.config import get_settings
+from app.modules.artifacts.storage import resolve_artifact_location
 from app.modules.ingestion.pipeline import process_staged_study_with_stages
 from app.modules.jobs.state_machine import transition_job
 from app.modules.results.materialize import materialize_study_results
+from app.modules.segmentation.nifti_pipeline import materialize_nifti_study_with_mask
 from app.modules.segmentation.pipeline import run_study_segmentation
 
 logger = logging.getLogger(__name__)
@@ -197,4 +200,150 @@ def execute_ingestion_job(*, job_id: str) -> WorkerDispatchEnvelope:
             job_id=str(job.public_id),
             study_id=str(study.public_id),
             extracted_relative_path=extracted_artifact.relative_path,
+        )
+
+
+def execute_nifti_segmentation_job(*, job_id: str) -> WorkerDispatchEnvelope:
+    """Worker for the NIfTI-direct demo upload.
+
+    Treats the optional uploaded mask as the segmentation result and
+    materializes a StudyResult so the existing /results endpoint serves
+    volume + diameter + bbox without any DICOM conversion.
+    """
+
+    session_factory = create_session_factory()
+    settings = get_settings()
+
+    def log_stage(level: str, message: str, **extra) -> None:
+        payload = {"job_id": job_id, **extra}
+        if level == "debug" and settings.verbose_worker_logs:
+            logger.info(message, extra=payload)
+        elif level == "info":
+            logger.info(message, extra=payload)
+        elif level == "error":
+            logger.error(message, extra=payload)
+
+    with session_factory() as session:
+        job = session.query(Job).filter(Job.public_id == UUID(job_id)).one()
+        study = session.query(Study).filter(Study.id == job.study_id).one()
+        mask_artifact = (
+            session.query(Artifact)
+            .filter(
+                Artifact.study_id == study.id,
+                Artifact.artifact_kind == "tumor-mask-input",
+            )
+            .order_by(Artifact.id.desc())
+            .first()
+        )
+
+        running_state = transition_job(job.status, "running", stage="materialize-results")
+        job.status = running_state.status
+        job.stage = running_state.stage
+        session.add(
+            JobEvent(
+                job_id=job.id,
+                status=job.status,
+                stage=job.stage,
+                event_type="transition",
+                payload={"detail": "nifti worker started"},
+            )
+        )
+        session.flush()
+
+        try:
+            if mask_artifact is None:
+                raise RuntimeError(
+                    "NIfTI demo job requires an uploaded tumor-mask-input artifact"
+                )
+
+            mask_location = resolve_artifact_location(
+                mask_artifact.storage_root,  # type: ignore[arg-type]
+                mask_artifact.relative_path,
+            )
+            log_stage(
+                "info",
+                "Materializing NIfTI demo result",
+                study_id=str(study.public_id),
+                mask_path=mask_location.relative_path,
+            )
+            materialize_nifti_study_with_mask(
+                session=session,
+                study_public_id=study.public_id,
+                mask_source_absolute_path=Path(mask_location.absolute_path),
+            )
+            completed_state = transition_job(job.status, "completed", stage="completed")
+            job.status = completed_state.status
+            job.stage = completed_state.stage
+            job.failure_payload = None
+            session.add(
+                JobEvent(
+                    job_id=job.id,
+                    status=job.status,
+                    stage=job.stage,
+                    event_type="transition",
+                    payload={"detail": "nifti analysis completed"},
+                )
+            )
+            session.commit()
+            log_stage("info", "NIfTI worker completed", study_id=str(study.public_id))
+        except Exception as exc:
+            log_stage(
+                "error",
+                "NIfTI worker failed",
+                study_id=str(study.public_id),
+                error=str(exc),
+            )
+            session.rollback()
+
+            failure_session = session_factory()
+            try:
+                failed_job = (
+                    failure_session.query(Job).filter(Job.public_id == UUID(job_id)).one()
+                )
+                failed_study = (
+                    failure_session.query(Study)
+                    .filter(Study.id == failed_job.study_id)
+                    .one()
+                )
+                failed_state = transition_job(
+                    failed_job.status,
+                    "failed",
+                    stage="materialize-results",
+                    error=JobErrorPayload(
+                        code="nifti-segmentation-failed",
+                        message=str(exc),
+                        details={
+                            "jobId": job_id,
+                            "studyId": str(failed_study.public_id),
+                        },
+                    ),
+                )
+                failed_job.status = failed_state.status
+                failed_job.stage = failed_state.stage
+                failed_job.failure_payload = (
+                    failed_state.error.model_dump(by_alias=True)
+                    if failed_state.error
+                    else None
+                )
+                failure_session.add(
+                    JobEvent(
+                        job_id=failed_job.id,
+                        status=failed_job.status,
+                        stage=failed_job.stage,
+                        event_type="failure",
+                        payload=failed_job.failure_payload or {},
+                    )
+                )
+                failure_session.commit()
+            finally:
+                failure_session.close()
+
+            raise
+        finally:
+            forget_worker_thread(job_id)
+
+        return WorkerDispatchEnvelope(
+            job_id=str(job.public_id),
+            study_id=str(study.public_id),
+            extracted_relative_path="",
         )

@@ -10,8 +10,11 @@ const {
   getPatientsMock,
   getScansMock,
   submitMriIngestionJobMock,
+  submitNiftiSegmentationJobMock,
   getJobStatusMock,
   getStudyResultsMock,
+  listStudiesMock,
+  submitComparisonMock,
   MockBackendApiError,
 } = vi.hoisted(() => {
   class HoistedBackendApiError extends Error {
@@ -30,8 +33,11 @@ const {
     getPatientsMock: vi.fn(),
     getScansMock: vi.fn(),
     submitMriIngestionJobMock: vi.fn(),
+    submitNiftiSegmentationJobMock: vi.fn(),
     getJobStatusMock: vi.fn(),
     getStudyResultsMock: vi.fn(),
+    listStudiesMock: vi.fn(),
+    submitComparisonMock: vi.fn(),
     MockBackendApiError: HoistedBackendApiError,
   }
 })
@@ -47,8 +53,11 @@ vi.mock('@/api/scans', () => ({
 vi.mock('@/api/backendWorkspace', () => ({
   BackendApiError: MockBackendApiError,
   submitMriIngestionJob: submitMriIngestionJobMock,
+  submitNiftiSegmentationJob: submitNiftiSegmentationJobMock,
   getJobStatus: getJobStatusMock,
   getStudyResults: getStudyResultsMock,
+  listStudies: listStudiesMock,
+  submitComparison: submitComparisonMock,
 }))
 
 function renderDashboard() {
@@ -68,17 +77,25 @@ function renderDashboard() {
   )
 }
 
+async function selectDicomFormat(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: /DICOM Zip/i }))
+}
+
 describe('DashboardPage operator workspace', () => {
   beforeEach(() => {
     vi.useRealTimers()
     getPatientsMock.mockReset()
     getScansMock.mockReset()
     submitMriIngestionJobMock.mockReset()
+    submitNiftiSegmentationJobMock.mockReset()
     getJobStatusMock.mockReset()
     getStudyResultsMock.mockReset()
+    listStudiesMock.mockReset()
+    submitComparisonMock.mockReset()
 
     getPatientsMock.mockResolvedValue([])
     getScansMock.mockResolvedValue([])
+    listStudiesMock.mockResolvedValue([])
 
     useAuthStore.setState({
       physician: { id: 'DR-001', name: 'Dr. D. Cohen', initials: 'DC' },
@@ -89,12 +106,61 @@ describe('DashboardPage operator workspace', () => {
     renderDashboard()
 
     expect(await screen.findByText('Live MRI backend test console')).toBeInTheDocument()
-    expect(screen.getByLabelText('MRI Study Zip')).toBeInTheDocument()
+    expect(screen.getByLabelText(/NIfTI Scan/i)).toBeInTheDocument()
     expect(screen.getByLabelText('Search patients')).toBeInTheDocument()
     expect(screen.getByText(/Mock roster/)).toBeInTheDocument()
   })
 
-  it('submits the selected file and source label to the backend', async () => {
+  it('submits a NIfTI scan + mask + acquisition date to the backend', async () => {
+    submitNiftiSegmentationJobMock.mockResolvedValue({
+      jobId: 'job-nifti-1',
+      studyId: 'study-nifti-1',
+      status: 'queued',
+      stage: 'staged',
+      submittedAt: '2026-04-12T11:24:03.996257Z',
+    })
+    getJobStatusMock.mockResolvedValue({
+      jobId: 'job-nifti-1',
+      studyId: 'study-nifti-1',
+      status: 'completed',
+      stage: 'completed',
+      submittedAt: '2026-04-12T11:24:03.996257Z',
+      error: null,
+    })
+    getStudyResultsMock.mockResolvedValue({
+      studyId: 'study-nifti-1',
+      resultArtifact: {
+        artifactKind: 'study-result-bundle',
+        storageRoot: 'derived',
+        relativePath: 'studies/study-nifti-1/results/study-result.json',
+      },
+      lesions: [],
+      needsReview: false,
+      caseQcReasons: [],
+    })
+
+    renderDashboard()
+    const user = userEvent.setup()
+    const scan = new File(['nifti-bytes'], 't1c.nii.gz', { type: 'application/gzip' })
+    const mask = new File(['mask-bytes'], 'mask.nii.gz', { type: 'application/gzip' })
+
+    await user.upload(await screen.findByLabelText(/NIfTI Scan/i), scan)
+    await user.upload(screen.getByLabelText(/Tumor Mask/i), mask)
+    await user.type(screen.getByLabelText('Source Label'), 'Patient P01 - Baseline')
+    await user.type(screen.getByLabelText('Acquisition Date'), '2024-01-15')
+    await user.click(screen.getByRole('button', { name: 'Upload And Start' }))
+
+    await waitFor(() => {
+      expect(submitNiftiSegmentationJobMock).toHaveBeenCalledTimes(1)
+    })
+    const payload = submitNiftiSegmentationJobMock.mock.calls[0][0]
+    expect(payload.scanFile).toBe(scan)
+    expect(payload.maskFile).toBe(mask)
+    expect(payload.sourceLabel).toBe('Patient P01 - Baseline')
+    expect(payload.acquiredAt).toBe('2024-01-15')
+  })
+
+  it('submits the selected DICOM zip and source label to the backend', async () => {
     submitMriIngestionJobMock.mockResolvedValue({
       jobId: 'job-1',
       studyId: 'study-1',
@@ -117,6 +183,7 @@ describe('DashboardPage operator workspace', () => {
 
     renderDashboard()
     const user = userEvent.setup()
+    await selectDicomFormat(user)
     const file = new File(['zip-body'], 'exam-upload.zip', { type: 'application/zip' })
 
     await user.upload(await screen.findByLabelText('MRI Study Zip'), file)
@@ -188,6 +255,7 @@ describe('DashboardPage operator workspace', () => {
 
     renderDashboard()
     const user = userEvent.setup()
+    await selectDicomFormat(user)
     const file = new File(['zip-body'], 'exam-upload.zip', { type: 'application/zip' })
 
     await user.upload(await screen.findByLabelText('MRI Study Zip'), file)
@@ -225,6 +293,7 @@ describe('DashboardPage operator workspace', () => {
 
     renderDashboard()
     const user = userEvent.setup()
+    await selectDicomFormat(user)
     const file = new File(['zip-body'], 'exam-upload.zip', { type: 'application/zip' })
 
     await user.upload(await screen.findByLabelText('MRI Study Zip'), file)
@@ -314,6 +383,7 @@ describe('DashboardPage operator workspace', () => {
 
     renderDashboard()
     const user = userEvent.setup()
+    await selectDicomFormat(user)
     const file = new File(['zip-body'], 'exam-upload.zip', { type: 'application/zip' })
 
     await user.upload(await screen.findByLabelText('MRI Study Zip'), file)
@@ -322,5 +392,106 @@ describe('DashboardPage operator workspace', () => {
     expect(
       await screen.findByText('Job completed, but the backend returned no stored results for this study.')
     ).toBeInTheDocument()
+  })
+})
+
+describe('DashboardPage longitudinal comparison panel', () => {
+  beforeEach(() => {
+    vi.useRealTimers()
+    getPatientsMock.mockReset()
+    getScansMock.mockReset()
+    submitMriIngestionJobMock.mockReset()
+    submitNiftiSegmentationJobMock.mockReset()
+    getJobStatusMock.mockReset()
+    getStudyResultsMock.mockReset()
+    listStudiesMock.mockReset()
+    submitComparisonMock.mockReset()
+
+    getPatientsMock.mockResolvedValue([])
+    getScansMock.mockResolvedValue([])
+
+    useAuthStore.setState({
+      physician: { id: 'DR-001', name: 'Dr. D. Cohen', initials: 'DC' },
+    })
+  })
+
+  it('runs a comparison and renders growth metrics', async () => {
+    listStudiesMock.mockResolvedValue([
+      {
+        studyId: 'baseline-study-id',
+        sourceKind: 'nifti-upload',
+        sourceLabel: 'Patient P01 - Baseline',
+        acquiredAt: '2024-01-15',
+        createdAt: '2024-01-15T10:00:00Z',
+        jobStatus: 'completed',
+        hasResults: true,
+      },
+      {
+        studyId: 'fu1-study-id',
+        sourceKind: 'nifti-upload',
+        sourceLabel: 'Patient P01 - FU1',
+        acquiredAt: '2024-04-10',
+        createdAt: '2024-04-10T10:00:00Z',
+        jobStatus: 'completed',
+        hasResults: true,
+      },
+    ])
+
+    submitComparisonMock.mockResolvedValue({
+      comparisonId: 'cmp-001',
+      baselineStudyId: 'baseline-study-id',
+      followupStudyId: 'fu1-study-id',
+      baselineAcquiredAt: '2024-01-15',
+      followupAcquiredAt: '2024-04-10',
+      metrics: {
+        volumeACm3: 14.815,
+        volumeBCm3: 18.5,
+        deltaCm3: 3.685,
+        pctChange: 24.87,
+        diceOverlap: 0.78,
+        hd95Mm: 4.2,
+        recistAMm: 39.1,
+        recistBMm: 43.2,
+        recistRatio: 1.105,
+        growthRateCm3PerDay: 0.043,
+        registrationNcc: 0.97,
+        volDeltaCiHalfCm3: 0.21,
+        method: 'affine',
+        backend: 'sitk',
+        didResegment: false,
+      },
+      interpretation: 'Progressive disease',
+      notes: [],
+      outputRelativePath: 'comparisons/cmp-001',
+    })
+
+    renderDashboard()
+    const user = userEvent.setup()
+
+    await waitFor(() => expect(listStudiesMock).toHaveBeenCalled())
+    expect(
+      await screen.findByText('Compare two scans, see tumor change')
+    ).toBeInTheDocument()
+
+    const baselineSelect = await screen.findByLabelText('Baseline Study')
+    const followupSelect = screen.getByLabelText('Follow-up Study')
+
+    await user.selectOptions(baselineSelect, 'baseline-study-id')
+    await user.selectOptions(followupSelect, 'fu1-study-id')
+    await user.click(screen.getByRole('button', { name: 'Run Comparison' }))
+
+    await waitFor(() => {
+      expect(submitComparisonMock).toHaveBeenCalledWith({
+        baselineStudyId: 'baseline-study-id',
+        followupStudyId: 'fu1-study-id',
+      })
+    })
+
+    expect(await screen.findByText('cmp-001', undefined, { timeout: 5000 })).toBeInTheDocument()
+    expect(screen.getByText('14.81 cm³')).toBeInTheDocument()
+    expect(screen.getByText('18.50 cm³')).toBeInTheDocument()
+    expect(screen.getByText('+3.69 cm³')).toBeInTheDocument()
+    expect(screen.getByText('+24.9%')).toBeInTheDocument()
+    expect(screen.getByText('Progressive disease')).toBeInTheDocument()
   })
 })

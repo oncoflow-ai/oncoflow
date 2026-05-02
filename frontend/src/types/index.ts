@@ -101,3 +101,43 @@ export interface BackendCaseResult {
   needsReview: boolean
   caseQcReasons: string[]
 }
+
+export interface BackendStudyListItem {
+  studyId: string
+  sourceKind: string
+  sourceLabel?: string | null
+  acquiredAt?: string | null
+  createdAt: string
+  jobStatus: string
+  hasResults: boolean
+}
+
+export interface BackendComparisonMetrics {
+  volumeACm3: number
+  volumeBCm3: number
+  deltaCm3: number
+  pctChange: number
+  diceOverlap?: number | null
+  hd95Mm?: number | null
+  recistAMm?: number | null
+  recistBMm?: number | null
+  recistRatio?: number | null
+  growthRateCm3PerDay?: number | null
+  registrationNcc?: number | null
+  volDeltaCiHalfCm3?: number | null
+  method?: string | null
+  backend?: string | null
+  didResegment?: boolean | null
+}
+
+export interface BackendComparisonResponse {
+  comparisonId: string
+  baselineStudyId: string
+  followupStudyId: string
+  baselineAcquiredAt?: string | null
+  followupAcquiredAt?: string | null
+  metrics: BackendComparisonMetrics
+  interpretation?: string | null
+  notes: string[]
+  outputRelativePath: string
+}

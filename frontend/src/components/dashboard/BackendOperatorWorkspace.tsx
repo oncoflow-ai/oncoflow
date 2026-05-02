@@ -1,5 +1,5 @@
 import { useId, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, CheckCircle2, Clock3, LoaderCircle, Upload, FileScan, ShieldAlert } from 'lucide-react'
 import ErrorBanner from '@/components/shared/ErrorBanner'
 import EmptyState from '@/components/shared/EmptyState'
@@ -10,6 +10,7 @@ import {
   getJobStatus,
   getStudyResults,
   submitMriIngestionJob,
+  submitNiftiSegmentationJob,
 } from '@/api/backendWorkspace'
 import { cn } from '@/lib/utils'
 import type {
@@ -21,6 +22,20 @@ import type {
 } from '@/types'
 
 const ACTIVE_STATUSES: BackendJobStatus[] = ['queued', 'running']
+
+type ScanFormat = 'nifti' | 'dicom-zip'
+
+function isNiftiFilename(name: string): boolean {
+  const lower = name.toLowerCase()
+  return lower.endsWith('.nii') || lower.endsWith('.nii.gz')
+}
+
+/**
+ * Do not use accept=".nii,.nii.gz" — many OS / browser pickers classify
+ * double-suffix files as .gz only, so the dialog greys out real .nii.gz
+ * volumes. We omit `accept` for NIfTI and validate the filename on submit.
+ */
+const DICOM_ZIP_ACCEPT = '.zip,application/zip,application/x-zip-compressed,application/octet-stream'
 
 function formatTimestamp(value: string): string {
   return new Date(value).toLocaleString('en-US', {
@@ -104,20 +119,56 @@ function ResultSummary({ result }: { result: BackendCaseResult }) {
 
 export default function BackendOperatorWorkspace() {
   const inputId = useId()
+  const maskInputId = useId()
+  const queryClient = useQueryClient()
+  const [scanFormat, setScanFormat] = useState<ScanFormat>('nifti')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [maskFile, setMaskFile] = useState<File | null>(null)
   const [sourceLabel, setSourceLabel] = useState('')
+  const [acquiredAt, setAcquiredAt] = useState('')
   const [localError, setLocalError] = useState<string | null>(null)
   const [activeRun, setActiveRun] = useState<BackendJobSubmission | null>(null)
 
-  const submitMutation = useMutation({
+  const dicomMutation = useMutation({
     mutationFn: ({ file, label }: { file: File; label?: string }) => submitMriIngestionJob(file, label),
     onMutate: () => {
       setLocalError(null)
     },
     onSuccess: run => {
       setActiveRun(run)
+      queryClient.invalidateQueries({ queryKey: ['backend-studies'] })
     },
   })
+
+  const niftiMutation = useMutation({
+    mutationFn: ({
+      scanFile,
+      maskFile,
+      sourceLabel,
+      acquiredAt,
+    }: {
+      scanFile: File
+      maskFile?: File | null
+      sourceLabel?: string
+      acquiredAt?: string
+    }) =>
+      submitNiftiSegmentationJob({
+        scanFile,
+        maskFile: maskFile ?? null,
+        sourceLabel,
+        acquiredAt,
+      }),
+    onMutate: () => {
+      setLocalError(null)
+    },
+    onSuccess: run => {
+      setActiveRun(run)
+      queryClient.invalidateQueries({ queryKey: ['backend-studies'] })
+    },
+  })
+
+  const submitMutation = scanFormat === 'nifti' ? niftiMutation : dicomMutation
+  const isSubmitting = niftiMutation.isPending || dicomMutation.isPending
 
   const jobStatusQuery = useQuery({
     queryKey: ['backend-operator-job', activeRun?.jobId],
@@ -147,7 +198,33 @@ export default function BackendOperatorWorkspace() {
     event.preventDefault()
 
     if (!selectedFile) {
-      setLocalError('Select a zipped MRI archive before submitting.')
+      setLocalError(
+        scanFormat === 'nifti'
+          ? 'Select a NIfTI scan before submitting.'
+          : 'Select a zipped MRI archive before submitting.'
+      )
+      return
+    }
+
+    if (scanFormat === 'nifti') {
+      if (!isNiftiFilename(selectedFile.name)) {
+        setLocalError('Scan must be a .nii or .nii.gz NIfTI volume.')
+        return
+      }
+      if (maskFile && !isNiftiFilename(maskFile.name)) {
+        setLocalError('Tumor mask must be a .nii or .nii.gz NIfTI volume.')
+        return
+      }
+      if (acquiredAt && Number.isNaN(Date.parse(acquiredAt))) {
+        setLocalError('Acquisition date must be a valid YYYY-MM-DD value.')
+        return
+      }
+      niftiMutation.mutate({
+        scanFile: selectedFile,
+        maskFile,
+        sourceLabel,
+        acquiredAt,
+      })
       return
     }
 
@@ -156,7 +233,7 @@ export default function BackendOperatorWorkspace() {
       return
     }
 
-    submitMutation.mutate({ file: selectedFile, label: sourceLabel })
+    dicomMutation.mutate({ file: selectedFile, label: sourceLabel })
   }
 
   return (
@@ -172,6 +249,8 @@ export default function BackendOperatorWorkspace() {
             </p>
           </div>
           <div className="rounded border border-border2 bg-bg px-3 py-2 font-mono text-[11px] text-text3">
+            POST <span className="text-text1">/api/v1/jobs/nifti-segmentation</span>
+            <br />
             POST <span className="text-text1">/api/v1/jobs/mri-ingestion</span>
             <br />
             GET <span className="text-text1">/api/v1/jobs/&lt;jobId&gt;</span>
@@ -186,17 +265,58 @@ export default function BackendOperatorWorkspace() {
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div className="flex items-center gap-2 text-[12px] font-mono uppercase tracking-[0.18em] text-text3">
               <Upload size={14} />
-              Upload study archive
+              Upload scan
+            </div>
+
+            <div>
+              <p className="mb-2 block text-[11px] font-mono font-bold uppercase tracking-widest text-text3">
+                Scan Format
+              </p>
+              <div className="inline-flex border border-border2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScanFormat('nifti')
+                    setSelectedFile(null)
+                  }}
+                  className={cn(
+                    'px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-[0.18em]',
+                    scanFormat === 'nifti'
+                      ? 'bg-teal text-black'
+                      : 'bg-surface text-text2 hover:text-text1'
+                  )}
+                >
+                  NIfTI (recommended)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScanFormat('dicom-zip')
+                    setSelectedFile(null)
+                    setMaskFile(null)
+                  }}
+                  className={cn(
+                    'border-l border-border2 px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-[0.18em]',
+                    scanFormat === 'dicom-zip'
+                      ? 'bg-teal text-black'
+                      : 'bg-surface text-text2 hover:text-text1'
+                  )}
+                >
+                  DICOM Zip
+                </button>
+              </div>
             </div>
 
             <div>
               <label htmlFor={inputId} className="mb-2 block text-[11px] font-mono font-bold uppercase tracking-widest text-text3">
-                MRI Study Zip
+                {scanFormat === 'nifti' ? 'NIfTI Scan (.nii / .nii.gz)' : 'MRI Study Zip'}
               </label>
               <input
                 id={inputId}
                 type="file"
-                accept=".zip,application/zip"
+                {...(scanFormat === 'nifti'
+                  ? {}
+                  : { accept: DICOM_ZIP_ACCEPT })}
                 onChange={event => setSelectedFile(event.target.files?.[0] ?? null)}
                 className="block w-full cursor-pointer border border-border2 bg-surface px-3 py-3 text-[13px] text-text2 file:mr-4 file:border-0 file:bg-teal file:px-3 file:py-1.5 file:font-mono file:text-[11px] file:font-bold file:uppercase file:tracking-widest file:text-black"
               />
@@ -205,19 +325,67 @@ export default function BackendOperatorWorkspace() {
                   Selected: <span className="font-mono text-text1">{selectedFile.name}</span>
                 </p>
               )}
+              {scanFormat === 'nifti' && (
+                <p className="mt-2 text-[11px] text-text3">
+                  The file dialog shows all files so <span className="font-mono">.nii.gz</span> volumes are never hidden by
+                  the browser. Only <span className="font-mono">.nii</span> and <span className="font-mono">.nii.gz</span>{' '}
+                  scan names pass validation.
+                </p>
+              )}
             </div>
 
-            <div>
-              <label htmlFor="source-label" className="mb-2 block text-[11px] font-mono font-bold uppercase tracking-widest text-text3">
-                Source Label
-              </label>
-              <input
-                id="source-label"
-                value={sourceLabel}
-                onChange={event => setSourceLabel(event.target.value)}
-                placeholder="local-demo"
-                className="w-full border border-border2 bg-surface px-3.5 py-[10px] text-[14px] text-text1 placeholder-text3 focus:border-teal focus:outline-none"
-              />
+            {scanFormat === 'nifti' && (
+              <div>
+                <label htmlFor={maskInputId} className="mb-2 block text-[11px] font-mono font-bold uppercase tracking-widest text-text3">
+                  Tumor Mask (optional, .nii.gz)
+                </label>
+                <input
+                  id={maskInputId}
+                  type="file"
+                  onChange={event => setMaskFile(event.target.files?.[0] ?? null)}
+                  className="block w-full cursor-pointer border border-border2 bg-surface px-3 py-3 text-[13px] text-text2 file:mr-4 file:border-0 file:bg-teal file:px-3 file:py-1.5 file:font-mono file:text-[11px] file:font-bold file:uppercase file:tracking-widest file:text-black"
+                />
+                {maskFile && (
+                  <p className="mt-2 text-[12px] text-text2">
+                    Mask: <span className="font-mono text-text1">{maskFile.name}</span>
+                  </p>
+                )}
+                <p className="mt-2 text-[11px] text-text3">
+                  When supplied, the mask is treated as the segmentation result (skips inference).
+                  Accepted: plain <span className="font-mono">.nii</span> or{' '}
+                  <span className="font-mono">.nii.gz</span> (filename is checked after you pick the file).
+                </p>
+              </div>
+            )}
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div>
+                <label htmlFor="source-label" className="mb-2 block text-[11px] font-mono font-bold uppercase tracking-widest text-text3">
+                  Source Label
+                </label>
+                <input
+                  id="source-label"
+                  value={sourceLabel}
+                  onChange={event => setSourceLabel(event.target.value)}
+                  placeholder="Patient P01 - Baseline"
+                  className="w-full border border-border2 bg-surface px-3.5 py-[10px] text-[14px] text-text1 placeholder-text3 focus:border-teal focus:outline-none"
+                />
+              </div>
+
+              {scanFormat === 'nifti' && (
+                <div>
+                  <label htmlFor="acquired-at" className="mb-2 block text-[11px] font-mono font-bold uppercase tracking-widest text-text3">
+                    Acquisition Date
+                  </label>
+                  <input
+                    id="acquired-at"
+                    type="date"
+                    value={acquiredAt}
+                    onChange={event => setAcquiredAt(event.target.value)}
+                    className="w-full border border-border2 bg-surface px-3.5 py-[10px] text-[14px] text-text1 focus:border-teal focus:outline-none"
+                  />
+                </div>
+              )}
             </div>
 
             {localError && <ErrorBanner message={localError} />}
@@ -226,10 +394,10 @@ export default function BackendOperatorWorkspace() {
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="submit"
-                disabled={submitMutation.isPending}
+                disabled={isSubmitting}
                 className="bg-teal px-4 py-2.5 font-mono text-[12px] font-bold uppercase tracking-[0.18em] text-black transition-colors hover:bg-teal/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {submitMutation.isPending ? 'Submitting…' : 'Upload And Start'}
+                {isSubmitting ? 'Submitting…' : 'Upload And Start'}
               </button>
               <span className="text-[12px] text-text3">
                 The dashboard will poll automatically until the run reaches a terminal state.
@@ -248,7 +416,7 @@ export default function BackendOperatorWorkspace() {
             <EmptyState
               icon={<FileScan size={24} />}
               title="No run submitted yet"
-              description="Upload a zipped MRI study to start live backend tracking from this dashboard."
+              description="Upload a NIfTI scan (and optional mask) or zipped DICOM study to start live backend tracking from this dashboard."
               className="min-h-[220px] border border-dashed border-border2 bg-surface"
             />
           ) : (
