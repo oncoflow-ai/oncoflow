@@ -30,7 +30,7 @@ export ONCOFLOW_STORAGE_ROOT="./var/oncoflow"
 export ONCOFLOW_JOB_EXECUTION_MODE="threaded"
 export OFLOW_BACKEND="local"
 export OFLOW_DEVICE="auto"
-export OFLOW_ENABLED_MODELS="nnunet,medgemma,sam3"
+export OFLOW_ENABLED_MODELS="nnunet"  # base-models only; full panel is "nnunet,medgemma,sam3"
 export OFLOW_CACHE_DIR="./var/oncoflow/cache"
 ```
 

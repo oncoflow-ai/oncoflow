@@ -3,8 +3,10 @@ import { apiClient } from './client'
 import type {
   BackendBoundingBox3D,
   BackendCaseResult,
+  BackendComparisonResponse,
   BackendJobStatusResponse,
   BackendJobSubmission,
+  BackendStudyListItem,
 } from '@/types'
 
 export class BackendApiError extends Error {
@@ -94,5 +96,69 @@ export async function getStudyResults(studyId: string): Promise<BackendCaseResul
     return normalizeCaseResult(response.data)
   } catch (error) {
     throw normalizeApiError(error, 'Failed to fetch study results')
+  }
+}
+
+export interface SubmitNiftiSegmentationJobInput {
+  scanFile: File
+  maskFile?: File | null
+  sourceLabel?: string
+  acquiredAt?: string
+}
+
+export async function submitNiftiSegmentationJob(
+  input: SubmitNiftiSegmentationJobInput
+): Promise<BackendJobSubmission> {
+  const formData = new FormData()
+  formData.append('scan_file', input.scanFile)
+  if (input.maskFile) {
+    formData.append('mask_file', input.maskFile)
+  }
+  if (input.sourceLabel?.trim()) {
+    formData.append('source_label', input.sourceLabel.trim())
+  }
+  if (input.acquiredAt?.trim()) {
+    formData.append('acquired_at', input.acquiredAt.trim())
+  }
+
+  try {
+    const response = await apiClient.post<BackendJobSubmission>(
+      '/api/v1/jobs/nifti-segmentation',
+      formData
+    )
+    return response.data
+  } catch (error) {
+    throw normalizeApiError(error, 'Failed to submit NIfTI segmentation job')
+  }
+}
+
+export async function listStudies(): Promise<BackendStudyListItem[]> {
+  try {
+    const response = await apiClient.get<BackendStudyListItem[]>('/api/v1/results/studies')
+    return response.data
+  } catch (error) {
+    throw normalizeApiError(error, 'Failed to list studies')
+  }
+}
+
+export interface SubmitComparisonInput {
+  baselineStudyId: string
+  followupStudyId: string
+}
+
+export async function submitComparison(
+  input: SubmitComparisonInput
+): Promise<BackendComparisonResponse> {
+  try {
+    const response = await apiClient.post<BackendComparisonResponse>(
+      '/api/v1/jobs/longitudinal-comparison',
+      {
+        baselineStudyId: input.baselineStudyId,
+        followupStudyId: input.followupStudyId,
+      }
+    )
+    return response.data
+  } catch (error) {
+    throw normalizeApiError(error, 'Failed to run longitudinal comparison')
   }
 }

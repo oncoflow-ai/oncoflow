@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/authStore'
 import TopNav from '@/components/layout/TopNav'
 import BackendOperatorWorkspace from '@/components/dashboard/BackendOperatorWorkspace'
+import LongitudinalComparisonPanel from '@/components/dashboard/LongitudinalComparisonPanel'
 import PatientTable from '@/components/patient/PatientTable'
 import ErrorBanner from '@/components/shared/ErrorBanner'
 import EmptyState from '@/components/shared/EmptyState'
@@ -69,6 +70,8 @@ export default function DashboardPage() {
       <main className="flex-1 px-5 py-6">
         <div className="flex flex-col gap-6">
           <BackendOperatorWorkspace />
+
+          <LongitudinalComparisonPanel />
 
           <section className="bg-surface border border-border">
             {isError && (

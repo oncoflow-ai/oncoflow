@@ -31,3 +31,8 @@ class JobSubmissionResponse(CamelModel):
 
 class JobStatusResponse(JobSubmissionResponse):
     error: JobErrorPayload | None = None
+
+
+class LongitudinalComparisonRequest(CamelModel):
+    baseline_study_id: str
+    followup_study_id: str
