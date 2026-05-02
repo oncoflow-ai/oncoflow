@@ -1,8 +1,8 @@
 import { mockPatients, mockScans, mockSummaries } from '@/data/mockData'
 
 describe('mockPatients', () => {
-  it('has 8 patients', () => {
-    expect(mockPatients).toHaveLength(8)
+  it('has 9 patients', () => {
+    expect(mockPatients).toHaveLength(9)
   })
   it('all patients have required fields', () => {
     for (const p of mockPatients) {
@@ -14,8 +14,8 @@ describe('mockPatients', () => {
 })
 
 describe('mockScans', () => {
-  it('has scan data for all 8 patients', () => {
-    expect(Object.keys(mockScans)).toHaveLength(8)
+  it('has scan data for all 9 patients', () => {
+    expect(Object.keys(mockScans)).toHaveLength(9)
   })
   it('scan counts match patient scanCount', () => {
     for (const p of mockPatients) {
@@ -25,8 +25,8 @@ describe('mockScans', () => {
 })
 
 describe('mockSummaries', () => {
-  it('has summaries for all 8 patients', () => {
-    expect(Object.keys(mockSummaries)).toHaveLength(8)
+  it('has summaries for all 9 patients', () => {
+    expect(Object.keys(mockSummaries)).toHaveLength(9)
   })
   it('summary model field is set', () => {
     for (const s of Object.values(mockSummaries)) {
