@@ -7,11 +7,31 @@ interface PatientRowProps {
   patient: Patient
   latestScan?: Scan
   previousScan?: Scan
+  /** Opening patient chart vs selecting row (radiologist roster) */
+  rowMode?: 'navigate' | 'select'
+  navigateBase?: string
+  selected?: boolean
+  onActivate?: () => void
 }
 
-export default function PatientRow({ patient, latestScan, previousScan }: PatientRowProps) {
+export default function PatientRow({
+  patient,
+  latestScan,
+  previousScan,
+  rowMode = 'navigate',
+  navigateBase = '/doctor/patients',
+  selected = false,
+  onActivate,
+}: PatientRowProps) {
   const navigate = useNavigate()
-  const navigateToPatient = () => navigate(`/patients/${patient.id}`)
+
+  function go() {
+    if (rowMode === 'select') {
+      onActivate?.()
+      return
+    }
+    navigate(`${navigateBase.replace(/\/$/, '')}/${patient.id}`)
+  }
 
   const volumeDelta = latestScan && previousScan
     ? calcVolumeDeltaPct(latestScan.volumeMm3, previousScan.volumeMm3)
@@ -19,17 +39,21 @@ export default function PatientRow({ patient, latestScan, previousScan }: Patien
 
   return (
     <tr
-      className="border-b border-border cursor-pointer hover:bg-surface2 transition-colors"
-      onClick={navigateToPatient}
+      className={cn(
+        'border-b border-border cursor-pointer hover:bg-surface2 transition-colors',
+        selected && 'bg-teal/5 ring-1 ring-inset ring-teal/25'
+      )}
+      onClick={go}
       onKeyDown={event => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault()
-          navigateToPatient()
+          go()
         }
       }}
       tabIndex={0}
-      role="link"
-      aria-label={`Open patient ${patient.name}`}
+      role={rowMode === 'select' ? 'button' : 'link'}
+      aria-current={selected ? 'true' : undefined}
+      aria-label={rowMode === 'select' ? `Select patient ${patient.name}` : `Open patient ${patient.name}`}
     >
       <td className="px-3 py-3.5">
         <div className="font-sans font-semibold text-[15px] text-text1">{patient.name}</div>

@@ -1,34 +1,65 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import type { Physician } from '@/types'
+import type { AuthenticatedUser, UserRole } from '@/types'
 
 interface AuthState {
-  physician: Physician | null
-  login: (id: string, password: string) => Promise<void>
+  user: AuthenticatedUser | null
+  login: (id: string, password: string, role: UserRole) => Promise<void>
   logout: () => void
+}
+
+function profileForRole(trimmedId: string, role: UserRole): AuthenticatedUser {
+  if (role === 'doctor') {
+    const id = trimmedId || 'DR-001'
+    return {
+      id,
+      name: 'Dr. D. Cohen',
+      initials: 'DC',
+      role: 'doctor',
+    }
+  }
+  if (role === 'radiologist') {
+    const id = trimmedId || 'RAD-001'
+    return {
+      id,
+      name: 'Alex Rahman',
+      initials: 'AR',
+      role: 'radiologist',
+    }
+  }
+  const patientRecordId = trimmedId || 'P-1029'
+  return {
+    id: patientRecordId,
+    name: 'Patient Portal',
+    initials: 'ME',
+    role: 'patient',
+    patientRecordId,
+  }
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
-      physician: null,
+      user: null,
 
-      login: async (id: string, password: string) => {
-        // Mock phase: accept any non-empty credentials
-        if (!id.trim() || !password.trim()) {
-          throw new Error('Physician ID and password are required')
+      login: async (id: string, password: string, role: UserRole) => {
+        const trimmed = id.trim()
+        if (!trimmed || !password.trim()) {
+          throw new Error('User ID and password are required')
         }
-        // Simulate network latency
+        if (role === 'patient' && !/^P-\d+/i.test(trimmed)) {
+          throw new Error('Patient sign-in expects a patient ID such as P-1029')
+        }
         await new Promise(res => setTimeout(res, 500))
-        set({ physician: { id: 'DR-001', name: 'Dr. D. Cohen', initials: 'DC' } })
+        set({ user: profileForRole(trimmed, role) })
       },
 
       logout: () => {
-        set({ physician: null })
+        set({ user: null })
       },
     }),
     {
-      name: 'oncoflow_auth',
+      name: 'oncoflow_auth_v2',
       storage: createJSONStorage(() => sessionStorage),
     }
   )

@@ -44,7 +44,16 @@ function pctChangeLabel(pct: number): string {
   return 'minor change'
 }
 
-export default function LongitudinalComparisonPanel() {
+interface LongitudinalComparisonPanelProps {
+  /** When set, only these backend study IDs appear in the selectors */
+  restrictToStudyIds?: string[]
+  scopeNote?: string
+}
+
+export default function LongitudinalComparisonPanel({
+  restrictToStudyIds,
+  scopeNote,
+}: LongitudinalComparisonPanelProps = {}) {
   const [baselineId, setBaselineId] = useState<string>('')
   const [followupId, setFollowupId] = useState<string>('')
   const [submitted, setSubmitted] = useState<BackendComparisonResponse | null>(null)
@@ -55,10 +64,13 @@ export default function LongitudinalComparisonPanel() {
     refetchInterval: 5000,
   })
 
-  const eligibleStudies = useMemo(
-    () => (studiesQuery.data ?? []).filter(s => s.hasResults),
-    [studiesQuery.data]
-  )
+  const eligibleStudies = useMemo(() => {
+    let list = (studiesQuery.data ?? []).filter(s => s.hasResults)
+    if (restrictToStudyIds?.length) {
+      list = list.filter(s => restrictToStudyIds.includes(s.studyId))
+    }
+    return list
+  }, [studiesQuery.data, restrictToStudyIds])
 
   const comparisonMutation = useMutation({
     mutationFn: ({ baseline, followup }: { baseline: string; followup: string }) =>
@@ -94,6 +106,11 @@ export default function LongitudinalComparisonPanel() {
               Pick a baseline study and a follow-up study. The backend runs registration, computes volume change,
               Dice / HD95 overlap, and RECIST diameters using the lightweight base-models pipeline.
             </p>
+            {scopeNote && (
+              <p className="mt-3 max-w-3xl rounded border border-border2 bg-bg px-3 py-2 text-[12px] leading-relaxed text-text2">
+                {scopeNote}
+              </p>
+            )}
           </div>
           <div className="rounded border border-border2 bg-bg px-3 py-2 font-mono text-[11px] text-text3">
             POST <span className="text-text1">/api/v1/jobs/longitudinal-comparison</span>

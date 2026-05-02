@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, CheckCircle2, Clock3, LoaderCircle, Upload, FileScan, ShieldAlert } from 'lucide-react'
 import ErrorBanner from '@/components/shared/ErrorBanner'
@@ -117,7 +117,22 @@ function ResultSummary({ result }: { result: BackendCaseResult }) {
   )
 }
 
-export default function BackendOperatorWorkspace() {
+export interface BackendOperatorWorkspaceProps {
+  headingEyebrow?: string
+  headingTitle?: string
+  headingDescription?: string
+  /** When provided (e.g. patient context), replaces the source label field until edited elsewhere */
+  prefilledSourceLabel?: string
+  onJobReachedTerminal?: (payload: { studyId: string; status: 'completed' | 'failed' }) => void
+}
+
+export default function BackendOperatorWorkspace({
+  headingEyebrow = 'Operator Workspace',
+  headingTitle = 'Live MRI backend test console',
+  headingDescription = 'Upload an MRI archive, follow backend processing stages in real time, and inspect case results, lesion packaging, review signals, and artifact lineage from the current backend.',
+  prefilledSourceLabel,
+  onJobReachedTerminal,
+}: BackendOperatorWorkspaceProps = {}) {
   const inputId = useId()
   const maskInputId = useId()
   const queryClient = useQueryClient()
@@ -128,6 +143,16 @@ export default function BackendOperatorWorkspace() {
   const [acquiredAt, setAcquiredAt] = useState('')
   const [localError, setLocalError] = useState<string | null>(null)
   const [activeRun, setActiveRun] = useState<BackendJobSubmission | null>(null)
+  const terminalHandledJobIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    terminalHandledJobIdRef.current = null
+  }, [activeRun?.jobId])
+
+  useEffect(() => {
+    if (prefilledSourceLabel === undefined) return
+    setSourceLabel(prefilledSourceLabel)
+  }, [prefilledSourceLabel])
 
   const dicomMutation = useMutation({
     mutationFn: ({ file, label }: { file: File; label?: string }) => submitMriIngestionJob(file, label),
@@ -194,6 +219,16 @@ export default function BackendOperatorWorkspace() {
   const jobFetchError =
     jobStatusQuery.error instanceof BackendApiError ? jobStatusQuery.error : null
 
+  useEffect(() => {
+    const jobId = activeRun?.jobId
+    const studyId = activeRun?.studyId
+    const st = jobStatusQuery.data?.status
+    if (!jobId || !studyId || !st || (st !== 'completed' && st !== 'failed')) return
+    if (terminalHandledJobIdRef.current === jobId) return
+    terminalHandledJobIdRef.current = jobId
+    onJobReachedTerminal?.({ studyId, status: st })
+  }, [activeRun?.jobId, activeRun?.studyId, jobStatusQuery.data?.status, onJobReachedTerminal])
+
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
@@ -241,11 +276,10 @@ export default function BackendOperatorWorkspace() {
       <div className="border-b border-border px-5 py-4">
         <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-teal">Operator Workspace</p>
-            <h2 className="mt-1 text-[24px] font-sans font-bold text-text1">Live MRI backend test console</h2>
+            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-teal">{headingEyebrow}</p>
+            <h2 className="mt-1 text-[24px] font-sans font-bold text-text1">{headingTitle}</h2>
             <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-text2">
-              Upload an MRI archive, follow backend processing stages in real time, and inspect case results,
-              lesion packaging, review signals, and artifact lineage from the current backend.
+              {headingDescription}
             </p>
           </div>
           <div className="rounded border border-border2 bg-bg px-3 py-2 font-mono text-[11px] text-text3">

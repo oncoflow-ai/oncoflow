@@ -5,7 +5,7 @@ import AuthPage from '@/pages/AuthPage'
 import { useAuthStore } from '@/store/authStore'
 
 beforeEach(() => {
-  useAuthStore.setState({ physician: null })
+  useAuthStore.setState({ user: null })
 })
 
 function renderAuthPage() {
@@ -31,7 +31,7 @@ describe('AuthPage', () => {
 
   it('shows error on empty credentials', async () => {
     renderAuthPage()
-    await userEvent.click(screen.getByText(/Access Patient Records/))
+    await userEvent.click(screen.getByRole('button', { name: /Continue/i }))
     await screen.findByText(/required/i)
   })
 })

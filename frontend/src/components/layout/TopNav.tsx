@@ -1,6 +1,7 @@
 import { LogOut } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
+import { ROLE_HOME } from '@/lib/routes'
 
 interface TopNavProps {
   searchValue?: string
@@ -10,7 +11,8 @@ interface TopNavProps {
 }
 
 export default function TopNav({ searchValue, onSearchChange, showSearch = false, cta }: TopNavProps) {
-  const { physician, logout } = useAuthStore()
+  const user = useAuthStore(s => s.user)
+  const logout = useAuthStore(s => s.logout)
   const navigate = useNavigate()
 
   function handleLogout() {
@@ -18,12 +20,39 @@ export default function TopNav({ searchValue, onSearchChange, showSearch = false
     navigate('/auth')
   }
 
+  function goHome() {
+    if (!user) {
+      navigate('/auth')
+      return
+    }
+    navigate(ROLE_HOME[user.role])
+  }
+
+  const roleLabel =
+    user?.role === 'doctor'
+      ? 'Doctor'
+      : user?.role === 'radiologist'
+        ? 'Radiologist'
+        : user?.role === 'patient'
+          ? 'Patient'
+          : ''
+
   return (
     <header className="h-[52px] bg-bg border-b border-border flex items-center gap-5 px-5 shrink-0">
-      <span className="font-sans font-semibold text-[17px] text-text1 tracking-tight whitespace-nowrap flex items-center gap-2">
+      <button
+        type="button"
+        onClick={goHome}
+        className="font-sans font-semibold text-[17px] text-text1 tracking-tight whitespace-nowrap flex items-center gap-2 hover:text-teal transition-colors"
+      >
         <span className="w-[7px] h-[7px] rounded-full bg-teal shadow-[0_0_8px_#0DC5A0]" />
         OncoFlow
-      </span>
+      </button>
+
+      {roleLabel && (
+        <span className="hidden sm:inline font-mono text-[10px] uppercase tracking-widest text-text3 border border-border2 px-2 py-1">
+          {roleLabel}
+        </span>
+      )}
 
       {showSearch && (
         <div className="flex-1 max-w-[360px] bg-surface border border-border2 h-[34px] flex items-center px-3 gap-2">
@@ -42,12 +71,13 @@ export default function TopNav({ searchValue, onSearchChange, showSearch = false
 
       <div className="ml-auto flex items-center gap-2.5">
         {cta}
-        {physician && (
+        {user && (
           <div className="w-[30px] h-[30px] bg-surface2 border border-border2 flex items-center justify-center font-mono text-[10px] text-text2">
-            {physician.initials}
+            {user.initials}
           </div>
         )}
         <button
+          type="button"
           onClick={handleLogout}
           className="w-[30px] h-[30px] bg-surface2 border border-border2 flex items-center justify-center text-text3 hover:text-danger transition-colors"
           title="Sign out"
