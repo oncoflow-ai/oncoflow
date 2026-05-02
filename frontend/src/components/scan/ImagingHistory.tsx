@@ -3,9 +3,11 @@ import ScanRow from './ScanRow'
 
 interface ImagingHistoryProps {
   scans: Scan[]
+  selectedScanId?: string | null
+  onSelectScan?: (scan: Scan) => void
 }
 
-export default function ImagingHistory({ scans }: ImagingHistoryProps) {
+export default function ImagingHistory({ scans, selectedScanId, onSelectScan }: ImagingHistoryProps) {
   const sorted = [...scans].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   return (
     <div className="bg-surface border border-border p-5">
@@ -13,7 +15,13 @@ export default function ImagingHistory({ scans }: ImagingHistoryProps) {
         Imaging History
       </div>
       {sorted.map((scan, i) => (
-        <ScanRow key={scan.id} scan={scan} index={sorted.length - i} />
+        <ScanRow
+          key={scan.id}
+          scan={scan}
+          index={sorted.length - i}
+          selected={selectedScanId === scan.id}
+          onSelect={onSelectScan ? () => onSelectScan(scan) : undefined}
+        />
       ))}
     </div>
   )

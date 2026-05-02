@@ -1,13 +1,16 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
+import type { UserRole } from '@/types'
+import { ROLE_HOME } from '@/lib/routes'
 
 type Mode = 'signin' | 'register'
 
 export default function AuthPage() {
   const [mode, setMode] = useState<Mode>('signin')
-  const [physicianId, setPhysicianId] = useState('')
+  const [userId, setUserId] = useState('')
   const [password, setPassword] = useState('')
+  const [role, setRole] = useState<UserRole>('doctor')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const login = useAuthStore(s => s.login)
@@ -18,8 +21,8 @@ export default function AuthPage() {
     setError('')
     setLoading(true)
     try {
-      await login(physicianId, password)
-      navigate('/dashboard')
+      await login(userId, password, role)
+      navigate(ROLE_HOME[role])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign in failed')
     } finally {
@@ -29,7 +32,6 @@ export default function AuthPage() {
 
   return (
     <div className="min-h-screen bg-bg flex items-stretch">
-      {/* Left brand panel */}
       <div className="hidden lg:flex flex-col justify-between flex-1 bg-surface border-r border-border p-14 relative overflow-hidden">
         <div className="absolute -top-10 -left-10 w-72 h-72 rounded-full bg-teal/10 blur-[80px] pointer-events-none" />
         <div>
@@ -66,21 +68,51 @@ export default function AuthPage() {
         </div>
       </div>
 
-      {/* Right form panel */}
       <div className="w-full lg:w-[380px] flex flex-col justify-center px-10 py-16 bg-bg">
         {mode === 'signin' ? (
           <form onSubmit={handleSignIn} className="space-y-4">
             <div className="text-[12px] font-mono font-bold tracking-widest uppercase text-text2 mb-8">
               Clinical Sign In
             </div>
+
+            <fieldset className="space-y-2">
+              <legend className="block text-[11px] font-mono font-bold tracking-widest uppercase text-text3 mb-2">
+                Role
+              </legend>
+              <div className="flex flex-col gap-2">
+                {([
+                  ['doctor', 'Doctor — patient roster & charts'],
+                  ['radiologist', 'Radiologist — upload & segmentation'],
+                  ['patient', 'Patient — portal (use Patient ID like P-1029)'],
+                ] as const).map(([value, label]) => (
+                  <label
+                    key={value}
+                    className={`flex items-center gap-2 border px-3 py-2 cursor-pointer text-[13px] ${
+                      role === value ? 'border-teal bg-teal/5' : 'border-border2'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="role"
+                      value={value}
+                      checked={role === value}
+                      onChange={() => setRole(value)}
+                      className="accent-teal"
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
             <div>
               <label className="block text-[11px] font-mono font-bold tracking-widest uppercase text-text3 mb-2">
-                Physician ID / Email
+                {role === 'patient' ? 'Patient ID' : 'User ID / Email'}
               </label>
               <input
-                value={physicianId}
-                onChange={e => setPhysicianId(e.target.value)}
-                placeholder="dr.cohen@ichilov.gov.il"
+                value={userId}
+                onChange={e => setUserId(e.target.value)}
+                placeholder={role === 'patient' ? 'P-1029' : 'dr.cohen@ichilov.gov.il'}
                 className="w-full bg-surface border border-border2 text-text1 px-3.5 py-[10px] text-[14px] font-sans placeholder-text3 focus:outline-none focus:border-teal transition-colors"
               />
             </div>
@@ -104,7 +136,7 @@ export default function AuthPage() {
               disabled={loading}
               className="w-full bg-teal text-black font-mono font-bold text-[13px] tracking-widest uppercase py-3 mt-2 hover:bg-teal/90 transition-colors disabled:opacity-50"
             >
-              {loading ? 'Signing in…' : 'Access Patient Records →'}
+              {loading ? 'Signing in…' : 'Continue →'}
             </button>
             <hr className="border-border my-6" />
             <p className="text-[12px] text-text2 text-center font-sans">
@@ -133,13 +165,13 @@ export default function AuthPage() {
                 />
               </div>
             ))}
-            <button className="w-full bg-surface border border-teal text-teal font-mono font-bold text-[13px] tracking-widest uppercase py-3 hover:bg-teal/5 transition-colors">
+            <button type="button" className="w-full bg-surface border border-teal text-teal font-mono font-bold text-[13px] tracking-widest uppercase py-3 hover:bg-teal/5 transition-colors">
               Submit Request
             </button>
             <hr className="border-border my-6" />
             <p className="text-[12px] text-text2 text-center font-sans">
               Already have access?{' '}
-              <button onClick={() => setMode('signin')} className="text-teal font-semibold">
+              <button type="button" onClick={() => setMode('signin')} className="text-teal font-semibold">
                 Sign in →
               </button>
             </p>

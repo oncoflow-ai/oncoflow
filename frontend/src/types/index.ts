@@ -1,5 +1,20 @@
 export type PatientStatus = 'active' | 'review'
 
+export type UserRole = 'doctor' | 'radiologist' | 'patient'
+
+/** Authenticated session user (mock login until backend JWT exists). */
+export interface AuthenticatedUser {
+  id: string
+  name: string
+  initials: string
+  role: UserRole
+  /** When role is patient, which roster record this portal shows */
+  patientRecordId?: string
+}
+
+/** @deprecated Use AuthenticatedUser */
+export type Physician = AuthenticatedUser
+
 export interface Patient {
   id: string               // e.g. "P-1029"
   name: string
@@ -10,6 +25,8 @@ export interface Patient {
   status: PatientStatus
   scanCount: number
   lastScanDate: string     // ISO date
+  /** Backend study UUIDs for demo longitudinal filtering */
+  linkedStudyIds?: string[]
 }
 
 export interface Scan {
@@ -32,6 +49,7 @@ export interface Summary {
   generatedAt: string      // ISO datetime
   model: string
   text: string
+  recommendations?: string[]
 }
 
 export interface MriUrl {
@@ -39,13 +57,16 @@ export interface MriUrl {
   expiresAt: string        // ISO datetime
 }
 
-export interface Physician {
-  id: string               // e.g. "DR-001"
-  name: string
-  initials: string
-}
-
 export type BackendJobStatus = 'queued' | 'running' | 'failed' | 'completed'
+
+/** Stored report metadata (mock persistence). */
+export interface ClinicalReportEntry {
+  id: string
+  patientId: string
+  title: string
+  generatedAt: string
+  summarySnippet: string
+}
 
 export interface BackendJobError {
   code: string

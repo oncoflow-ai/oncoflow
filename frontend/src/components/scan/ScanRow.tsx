@@ -1,15 +1,39 @@
 import type { Scan } from '@/types'
 import { formatDate, formatVolume } from '@/lib/utils'
 import { ScanLine } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 interface ScanRowProps {
   scan: Scan
   index: number
+  selected?: boolean
+  onSelect?: () => void
 }
 
-export default function ScanRow({ scan, index }: ScanRowProps) {
+export default function ScanRow({ scan, index, selected = false, onSelect }: ScanRowProps) {
+  const interactive = !!onSelect
+
   return (
-    <div className="flex items-center gap-3.5 py-3 border-b border-border last:border-b-0 last:pb-0 first:pt-0">
+    <div
+      role={interactive ? 'button' : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      onClick={interactive ? onSelect : undefined}
+      onKeyDown={
+        interactive
+          ? event => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                onSelect?.()
+              }
+            }
+          : undefined
+      }
+      className={cn(
+        'flex items-center gap-3.5 py-3 border-b border-border last:border-b-0 last:pb-0 first:pt-0',
+        interactive && 'cursor-pointer hover:bg-surface2/80 transition-colors rounded-sm -mx-2 px-2',
+        selected && 'bg-teal/5 ring-1 ring-inset ring-teal/20'
+      )}
+    >
       <span className="font-mono text-[10px] text-text3 w-5 shrink-0 text-right">
         {String(index).padStart(2, '0')}
       </span>

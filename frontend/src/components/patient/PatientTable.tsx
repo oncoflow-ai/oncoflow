@@ -6,11 +6,23 @@ interface PatientTableProps {
   patients: Patient[]
   scansMap: Record<string, Scan[]>
   loading?: boolean
+  rowMode?: 'navigate' | 'select'
+  navigateBase?: string
+  selectedPatientId?: string | null
+  onSelectPatient?: (patient: Patient) => void
 }
 
 const COLUMNS = ['Patient', 'Diagnosis', 'Scans', 'Last MRI', 'Volume (latest)', 'Status', '']
 
-export default function PatientTable({ patients, scansMap, loading = false }: PatientTableProps) {
+export default function PatientTable({
+  patients,
+  scansMap,
+  loading = false,
+  rowMode = 'navigate',
+  navigateBase = '/doctor/patients',
+  selectedPatientId = null,
+  onSelectPatient,
+}: PatientTableProps) {
   return (
     <table className="w-full border-collapse">
       <thead>
@@ -40,6 +52,10 @@ export default function PatientTable({ patients, scansMap, loading = false }: Pa
                   patient={patient}
                   latestScan={latest}
                   previousScan={previous}
+                  rowMode={rowMode}
+                  navigateBase={navigateBase}
+                  selected={selectedPatientId === patient.id}
+                  onActivate={() => onSelectPatient?.(patient)}
                 />
               )
             })}
