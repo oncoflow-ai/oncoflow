@@ -137,6 +137,7 @@ export default function DoctorPatientDashboardPage() {
     )
   }
 
+  return (
     <div className="min-h-screen bg-bg flex flex-col">
       <div className="h-[52px] bg-bg border-b border-border flex items-center gap-4 px-5 shrink-0">
         <button
@@ -306,3 +307,4 @@ export default function DoctorPatientDashboardPage() {
     </div>
   )
 }
+
