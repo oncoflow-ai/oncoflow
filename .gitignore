@@ -46,3 +46,6 @@ docs/superpowers/
 
 # Backend local runtime / cache (staging, derived artifacts)
 backend/var/
+
+# External ML Tools
+ml/external_tools/
