@@ -61,7 +61,7 @@ class InferenceConfig:
     orient_to_ras: bool = True
     n4_bias_correction: bool = True
     isotropic_spacing_mm: float = 1.0
-    skull_strip: bool = False  # Opt-in; antspynet on CPU, HD-BET on CUDA
+    skull_strip: bool = True  # Opt-in; antspynet on CPU, HD-BET on CUDA
 
     # Paths
     weights_dir: Path = field(default_factory=lambda: DEFAULT_WEIGHTS_DIR)
@@ -84,7 +84,7 @@ class InferenceConfig:
     # nnU-Net specifics
     nnunet_config_local: Literal["3d_lowres", "2d", "3d_fullres"] = "3d_lowres"
     nnunet_config_gpu: Literal["3d_fullres", "3d_lowres", "2d"] = "3d_fullres"
-    nnunet_dataset_id: str = "Dataset001_BraTS"
+    nnunet_task_id: str = "Task001_BrainTumour"
     nnunet_use_tta_local: bool = False
     nnunet_use_tta_gpu: bool = True
 
@@ -274,8 +274,8 @@ def load_config(yaml_path: str | Path | None = None) -> InferenceConfig:
         nnunet_config_gpu=_coerce(
             "nnunet_config_gpu", defaults.nnunet_config_gpu, str
         ),  # type: ignore
-        nnunet_dataset_id=_coerce(
-            "nnunet_dataset_id", defaults.nnunet_dataset_id, str
+        nnunet_task_id=_coerce(
+            "nnunet_task_id", defaults.nnunet_task_id, str
         ),
         nnunet_use_tta_local=_coerce(
             "nnunet_use_tta_local",

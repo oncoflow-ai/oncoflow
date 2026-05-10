@@ -10,7 +10,7 @@ from app.modules.benchmark.model_registry import get_model_spec
 
 SUPPORTED_MODEL_IDS = {"nnunet-v2-resenc"}
 SUPPORTED_DEVICES = {"cpu", "mps", "cuda"}
-RUNTIME_DEPENDENCIES = ("numpy", "nibabel", "torch", "nnunetv2")
+RUNTIME_DEPENDENCIES = ("numpy", "nibabel", "torch", "nnunetv1")
 INFERENCE_CORE_DEPENDENCIES = ("numpy", "nibabel", "SimpleITK")
 
 
@@ -239,5 +239,5 @@ def resolve_runtime_readiness(
         package_manifest_relative_path=manifest.relative_to(model_root).as_posix(),
         weights_digest=weights_digest,
         device=device,
-        execution_backend="nnunetv2",
+        execution_backend="nnunetv1",
     )

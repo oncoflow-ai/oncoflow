@@ -80,8 +80,8 @@ def test_runtime_readiness_rejects_non_baseline_models_devices_and_missing_runti
             settings=_settings(tmp_path, model_dir=str(package), device="tpu"),
         )
 
-    monkeypatch.setattr("app.modules.segmentation.runtime._dependency_gaps", lambda: ("torch", "nnunetv2"))
-    with pytest.raises(RuntimeDependencyMissingError, match="torch, nnunetv2"):
+    monkeypatch.setattr("app.modules.segmentation.runtime._dependency_gaps", lambda: ("torch", "nnunetv1"))
+    with pytest.raises(RuntimeDependencyMissingError, match="torch, nnunetv1"):
         resolve_runtime_readiness(
             model_id="nnunet-v2-resenc",
             settings=_settings(tmp_path, model_dir=str(package)),

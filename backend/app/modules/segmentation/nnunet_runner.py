@@ -193,7 +193,7 @@ class DefaultNnUnetPredictor:
         try:
             import nibabel as nib
             import torch
-            from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
+            from nnunetv1.inference.predict_from_raw_data import nnUNetPredictor
         except ModuleNotFoundError as exc:  # pragma: no cover - covered by runtime gate tests
             raise SegmentationRuntimeError(
                 "nnU-Net runtime dependencies are missing from the active Python environment"
