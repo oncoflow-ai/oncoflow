@@ -2,10 +2,10 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import AuthPage from '@/pages/AuthPage'
-import { useAuthStore } from '@/store/authStore'
+import { demoUsers, useAuthStore } from '@/store/authStore'
 
 beforeEach(() => {
-  useAuthStore.setState({ user: null })
+  useAuthStore.setState({ user: null, users: demoUsers, patientAssignments: {} })
 })
 
 function renderAuthPage() {

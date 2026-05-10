@@ -1,16 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
-import type { UserRole } from '@/types'
 import { ROLE_HOME } from '@/lib/routes'
 
 type Mode = 'signin' | 'register'
 
 export default function AuthPage() {
   const [mode, setMode] = useState<Mode>('signin')
-  const [userId, setUserId] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [role, setRole] = useState<UserRole>('doctor')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const login = useAuthStore(s => s.login)
@@ -21,8 +19,8 @@ export default function AuthPage() {
     setError('')
     setLoading(true)
     try {
-      await login(userId, password, role)
-      navigate(ROLE_HOME[role])
+      const user = await login(email, password)
+      navigate(ROLE_HOME[user.role])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign in failed')
     } finally {
@@ -50,7 +48,7 @@ export default function AuthPage() {
             <span className="italic text-teal">every scan.</span>
           </h1>
           <p className="text-[14px] text-text2 leading-relaxed max-w-sm">
-            Automated tumor segmentation, volumetric comparison, and AI-generated clinical narratives — built for oncologists and radiologists.
+            Automated tumor segmentation, volumetric comparison, and AI-generated clinical narratives — built for oncologists, radiologists, and patient-facing review.
           </p>
         </div>
 
@@ -75,44 +73,16 @@ export default function AuthPage() {
               Clinical Sign In
             </div>
 
-            <fieldset className="space-y-2">
-              <legend className="block text-[11px] font-mono font-bold tracking-widest uppercase text-text3 mb-2">
-                Role
-              </legend>
-              <div className="flex flex-col gap-2">
-                {([
-                  ['doctor', 'Doctor — patient roster & charts'],
-                  ['radiologist', 'Radiologist — upload & segmentation'],
-                  ['patient', 'Patient — portal (use Patient ID like P-1029)'],
-                ] as const).map(([value, label]) => (
-                  <label
-                    key={value}
-                    className={`flex items-center gap-2 border px-3 py-2 cursor-pointer text-[13px] ${
-                      role === value ? 'border-teal bg-teal/5' : 'border-border2'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="role"
-                      value={value}
-                      checked={role === value}
-                      onChange={() => setRole(value)}
-                      className="accent-teal"
-                    />
-                    {label}
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-
             <div>
               <label className="block text-[11px] font-mono font-bold tracking-widest uppercase text-text3 mb-2">
-                {role === 'patient' ? 'Patient ID' : 'User ID / Email'}
+                Email
               </label>
               <input
-                value={userId}
-                onChange={e => setUserId(e.target.value)}
-                placeholder={role === 'patient' ? 'P-1029' : 'dr.cohen@ichilov.gov.il'}
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="dr.cohen@ichilov.gov.il"
+                autoComplete="email"
                 className="w-full bg-surface border border-border2 text-text1 px-3.5 py-[10px] text-[14px] font-sans placeholder-text3 focus:outline-none focus:border-teal transition-colors"
               />
             </div>
@@ -125,6 +95,7 @@ export default function AuthPage() {
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••"
+                autoComplete="current-password"
                 className="w-full bg-surface border border-border2 text-text1 px-3.5 py-[10px] text-[14px] font-sans placeholder-text3 focus:outline-none focus:border-teal transition-colors"
               />
             </div>
@@ -138,6 +109,9 @@ export default function AuthPage() {
             >
               {loading ? 'Signing in…' : 'Continue →'}
             </button>
+            <div className="border border-border2 bg-surface px-3.5 py-3 text-[11px] text-text3 font-mono leading-relaxed">
+              Admin demo: admin@oncoflow.local / admin123
+            </div>
             <hr className="border-border my-6" />
             <p className="text-[12px] text-text2 text-center font-sans">
               New clinician?{' '}

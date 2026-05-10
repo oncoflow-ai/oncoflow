@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
-import { useAuthStore } from '@/store/authStore'
+import { demoUsers, useAuthStore } from '@/store/authStore'
 
 function Protected() {
   const user = useAuthStore(s => s.user)
@@ -10,7 +10,7 @@ function Protected() {
 }
 
 beforeEach(() => {
-  useAuthStore.setState({ user: null })
+  useAuthStore.setState({ user: null, users: demoUsers, patientAssignments: {} })
 })
 
 describe('route protection', () => {
@@ -26,7 +26,7 @@ describe('route protection', () => {
   })
 
   it('shows content when authenticated', async () => {
-    await useAuthStore.getState().login('DR-001', 'pw', 'doctor')
+    await useAuthStore.getState().login('DR-001', 'password', 'doctor')
     render(
       <MemoryRouter initialEntries={['/doctor']}>
         <Routes>

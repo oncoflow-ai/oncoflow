@@ -9,6 +9,8 @@ import DoctorDashboardPage from '@/pages/DoctorDashboardPage'
 import DoctorPatientDashboardPage from '@/pages/DoctorPatientDashboardPage'
 import RadiologistWorkspacePage from '@/pages/RadiologistWorkspacePage'
 import PatientPortalPage from '@/pages/PatientPortalPage'
+import AdminUsersPage from '@/pages/AdminUsersPage'
+import RadiologyReviewPage from '@/pages/RadiologyReviewPage'
 
 function ProtectedRoute() {
   const user = useAuthStore(s => s.user)
@@ -23,10 +25,11 @@ function AuthGuard() {
   return <AuthPage />
 }
 
-function RoleRoute({ role }: { role: UserRole }) {
+function RoleRoute({ role, roles }: { role?: UserRole; roles?: UserRole[] }) {
   const user = useAuthStore(s => s.user)
   if (user === null) return <Navigate to="/auth" replace />
-  if (user.role !== role) return <Navigate to={ROLE_HOME[user.role]} replace />
+  const allowedRoles = roles ?? (role ? [role] : [])
+  if (!allowedRoles.includes(user.role)) return <Navigate to={ROLE_HOME[user.role]} replace />
   return <Outlet />
 }
 
@@ -45,7 +48,11 @@ export const router = createBrowserRouter([
       { path: '/dashboard', element: <DashboardPage /> },
       { path: '/patients/:id', element: <PatientDetailPage /> },
       {
-        element: <RoleRoute role="doctor" />,
+        element: <RoleRoute role="admin" />,
+        children: [{ path: '/admin/users', element: <AdminUsersPage /> }],
+      },
+      {
+        element: <RoleRoute roles={['doctor', 'clinician']} />,
         children: [
           { path: '/doctor', element: <DoctorDashboardPage /> },
           { path: '/doctor/patients/:id', element: <DoctorPatientDashboardPage /> },
@@ -53,11 +60,17 @@ export const router = createBrowserRouter([
       },
       {
         element: <RoleRoute role="radiologist" />,
-        children: [{ path: '/radiologist', element: <RadiologistWorkspacePage /> }],
+        children: [
+          { path: '/radiologist', element: <RadiologistWorkspacePage /> },
+          { path: '/review', element: <RadiologyReviewPage /> },
+        ],
       },
       {
         element: <RoleRoute role="patient" />,
-        children: [{ path: '/patient', element: <PatientPortalPage /> }],
+        children: [
+          { path: '/patient', element: <PatientPortalPage /> },
+          { path: '/portal', element: <PatientPortalPage /> },
+        ],
       },
     ],
   },

@@ -2,6 +2,7 @@ import { LogOut } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/store/authStore'
 import { ROLE_HOME } from '@/lib/routes'
+import { roleLabels } from '@/lib/roles'
 
 interface TopNavProps {
   searchValue?: string
@@ -28,15 +29,6 @@ export default function TopNav({ searchValue, onSearchChange, showSearch = false
     navigate(ROLE_HOME[user.role])
   }
 
-  const roleLabel =
-    user?.role === 'doctor'
-      ? 'Doctor'
-      : user?.role === 'radiologist'
-        ? 'Radiologist'
-        : user?.role === 'patient'
-          ? 'Patient'
-          : ''
-
   return (
     <header className="h-[52px] bg-bg border-b border-border flex items-center gap-5 px-5 shrink-0">
       <button
@@ -48,9 +40,9 @@ export default function TopNav({ searchValue, onSearchChange, showSearch = false
         OncoFlow
       </button>
 
-      {roleLabel && (
+      {user && (
         <span className="hidden sm:inline font-mono text-[10px] uppercase tracking-widest text-text3 border border-border2 px-2 py-1">
-          {roleLabel}
+          {roleLabels[user.role]}
         </span>
       )}
 

@@ -1,12 +1,13 @@
 export type PatientStatus = 'active' | 'review'
 
-export type UserRole = 'doctor' | 'radiologist' | 'patient'
+export type UserRole = 'admin' | 'doctor' | 'radiologist' | 'clinician' | 'patient'
 
 /** Authenticated session user (mock login until backend JWT exists). */
 export interface AuthenticatedUser {
   id: string
   name: string
   initials: string
+  email?: string
   role: UserRole
   /** When role is patient, which roster record this portal shows */
   patientRecordId?: string
@@ -93,6 +94,7 @@ export interface BackendArtifactRef {
 }
 
 export interface BackendBoundingBox3D {
+  [key: string]: number
   xMin: number
   xMax: number
   yMin: number
@@ -161,4 +163,9 @@ export interface BackendComparisonResponse {
   interpretation?: string | null
   notes: string[]
   outputRelativePath: string
+}
+
+export interface AppUser extends AuthenticatedUser {
+  email: string
+  password: string
 }
