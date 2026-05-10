@@ -19,13 +19,13 @@ def _runtime(tmp_path: Path) -> RuntimeReadiness:
     model_root = tmp_path / "model"
     model_root.mkdir(parents=True, exist_ok=True)
     return RuntimeReadiness(
-        model_id="nnunet-v2-resenc",
+        model_id="nnunet-v1-brats",
         model_directory=str(model_root),
-        checkpoint_relative_path="checkpoint_final.pth",
+        checkpoint_relative_path="model_final_checkpoint.model",
         package_manifest_relative_path="dataset.json",
         weights_digest="abc123def456abc123def456abc123def456abc123def456abc123def456abcd",
         device="cpu",
-        execution_backend="nnunetv2",
+        execution_backend="nnunetv1",
     )
 
 
@@ -115,7 +115,7 @@ def test_nnunet_runner_normalizes_predictor_output_into_lesion_predictions(tmp_p
     )
     result = runner.run(bundle=_bundle(tmp_path))
 
-    assert result.runner.execution_backend == "nnunetv2"
+    assert result.runner.execution_backend == "nnunetv1"
     assert [prediction.bounding_box.z_min for prediction in result.lesions] == [0, 1]
     assert result.lesions[0].confidence_score == 0.91
     assert result.lesions[1].confidence_score == 0.41
