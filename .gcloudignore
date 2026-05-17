@@ -1,0 +1,17 @@
+.git
+.gitignore
+venv/
+env/
+__pycache__/
+*.pyc
+.DS_Store
+.idea/
+.vscode/
+data/
+weights/
+logs/
+.pytest_cache/
+tests/
+.dockerignore
+terraform/
+scripts/

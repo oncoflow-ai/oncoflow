@@ -1,0 +1,31 @@
+FROM pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install dependencies
+COPY ml/inference/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir fastapi uvicorn python-multipart
+# SAM3 specific installation (assuming facebookresearch/sam3 or sam2)
+RUN pip install --no-cache-dir git+https://github.com/facebookresearch/segment-anything-2.git || echo "SAM2/3 install fallback"
+
+# Copy weights (assuming they are placed here during build)
+# COPY weights/sam /app/weights/sam
+
+# Copy application code
+COPY ml/ /app/ml/
+
+# Set env vars for the vertex entrypoint
+ENV OFLOW_MODEL_NAME=sam3
+ENV OFLOW_BACKEND=local
+ENV PYTHONPATH=/app
+ENV AIP_HTTP_PORT=8080
+
+EXPOSE 8080
+
+CMD ["python", "-m", "ml.inference.vertex.main"]

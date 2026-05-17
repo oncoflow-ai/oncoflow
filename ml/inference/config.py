@@ -67,6 +67,13 @@ class InferenceConfig:
     weights_dir: Path = field(default_factory=lambda: DEFAULT_WEIGHTS_DIR)
     cache_dir: Path = field(default_factory=lambda: DEFAULT_CACHE_DIR)
 
+    # Vertex AI
+    vertex_project_id: str = "oncoflow-496517"
+    vertex_region: str = "us-central1"
+    vertex_endpoint_nnunet: str = ""
+    vertex_endpoint_sam3: str = ""
+    vertex_endpoint_medgemma: str = ""
+
     # MedGemma specifics
     medgemma_model_id: str = "google/medgemma-1.5-4b-it"
     medgemma_fallback_model_id: str = "microsoft/llava-med-v1.5-mistral-7b"
@@ -287,4 +294,9 @@ def load_config(yaml_path: str | Path | None = None) -> InferenceConfig:
             defaults.nnunet_use_tta_gpu,
             lambda s: str(s).lower() in {"1", "true", "yes"},
         ),
+        vertex_project_id=_coerce("vertex_project_id", defaults.vertex_project_id, str),
+        vertex_region=_coerce("vertex_region", defaults.vertex_region, str),
+        vertex_endpoint_nnunet=_coerce("vertex_endpoint_nnunet", defaults.vertex_endpoint_nnunet, str),
+        vertex_endpoint_sam3=_coerce("vertex_endpoint_sam3", defaults.vertex_endpoint_sam3, str),
+        vertex_endpoint_medgemma=_coerce("vertex_endpoint_medgemma", defaults.vertex_endpoint_medgemma, str),
     )

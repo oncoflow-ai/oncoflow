@@ -37,6 +37,7 @@ from ml.inference.adapters.base import (
     SegmentationAdapter,
     empty_result,
 )
+from ml.inference.adapters.vertex_client import VertexClient
 from ml.inference.io import Volume
 
 logger = logging.getLogger(__name__)
@@ -93,7 +94,11 @@ class NNUNetAdapter(SegmentationAdapter):
             return
 
         if self.cfg.backend == "gpu-prod":
-            self._mode = "nnunet_cli"
+            self._mode = "vertex"
+            self._vertex_client = VertexClient(
+                project_id=self.cfg.vertex_project_id,
+                region=self.cfg.vertex_region
+            )
             self._loaded = True
             return
 
@@ -123,6 +128,13 @@ class NNUNetAdapter(SegmentationAdapter):
     def _predict_impl(
         self, vol: Volume, roi: Optional[Bbox]
     ) -> AdapterResult:
+        if self._mode == "vertex":
+            return self._vertex_client.predict(
+                endpoint_id=self.cfg.vertex_endpoint_nnunet,
+                vol=vol,
+                roi=roi,
+                model_name=self.name
+            )
         if self._mode == "nnunet_cli":
             return self._predict_cli(vol)
         if self._mode == "monai":
