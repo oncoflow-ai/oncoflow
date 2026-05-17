@@ -39,3 +39,8 @@ matplotlib>=3.8
 
 # Testing
 pytest>=8.0
+
+# Google Cloud (Vertex AI client)
+google-auth>=2.20
+requests>=2.30
+google-cloud-aiplatform>=1.35

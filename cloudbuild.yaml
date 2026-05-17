@@ -1,0 +1,12 @@
+steps:
+  # Build the nnU-Net container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', '$_NNUNET_IMAGE', '-f', 'ml/inference/vertex/Dockerfile.nnunet', '.']
+  
+  # Push the container image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '$_NNUNET_IMAGE']
+images:
+  - '$_NNUNET_IMAGE'
+options:
+  machineType: 'E2_HIGHCPU_8'

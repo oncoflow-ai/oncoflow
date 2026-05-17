@@ -32,6 +32,7 @@ from ml.inference.adapters.base import (
     SegmentationAdapter,
     empty_result,
 )
+from ml.inference.adapters.vertex_client import VertexClient
 from ml.inference.io import Volume
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,8 @@ class Sam3Adapter(SegmentationAdapter):
     # ------------------------------------------------------------------
 
     def is_available(self) -> bool:
+        if self.cfg.backend == "gpu-prod":
+            return True
         if self._probe_sam3():
             return True
         if self._probe_sam2():
@@ -90,6 +93,15 @@ class Sam3Adapter(SegmentationAdapter):
         global _PREDICTOR, _BACKEND_USED
 
         if self._loaded and _PREDICTOR is not None:
+            return
+
+        if self.cfg.backend == "gpu-prod":
+            _BACKEND_USED = "vertex"
+            self._vertex_client = VertexClient(
+                project_id=self.cfg.vertex_project_id,
+                region=self.cfg.vertex_region
+            )
+            self._loaded = True
             return
 
         # Try SAM3
@@ -144,6 +156,14 @@ class Sam3Adapter(SegmentationAdapter):
     def _predict_impl(
         self, vol: Volume, roi: Optional[Bbox]
     ) -> AdapterResult:
+        if _BACKEND_USED == "vertex":
+            return self._vertex_client.predict(
+                endpoint_id=self.cfg.vertex_endpoint_sam3,
+                vol=vol,
+                roi=roi,
+                model_name=self.name
+            )
+
         if _PREDICTOR is None:
             return empty_result(
                 vol.shape, error="no SAM backend loaded", model=self.name

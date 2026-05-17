@@ -41,6 +41,7 @@ from ml.inference.adapters.base import (
     SegmentationAdapter,
     empty_result,
 )
+from ml.inference.adapters.vertex_client import VertexClient
 from ml.inference.io import Volume
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,8 @@ class MedGemmaAdapter(SegmentationAdapter):
     # ------------------------------------------------------------------
 
     def is_available(self) -> bool:
+        if self.cfg.backend == "gpu-prod":
+            return True
         try:
             import torch  # noqa: F401
             from transformers import AutoProcessor, AutoModelForImageTextToText  # noqa: F401
@@ -78,6 +81,17 @@ class MedGemmaAdapter(SegmentationAdapter):
 
         if self._loaded:
             return
+
+        if self.cfg.backend == "gpu-prod":
+            self._mode = "vertex"
+            self._vertex_client = VertexClient(
+                project_id=self.cfg.vertex_project_id,
+                region=self.cfg.vertex_region
+            )
+            self._loaded = True
+            return
+
+        self._mode = "local"
 
         import torch
         from transformers import AutoProcessor, AutoModelForImageTextToText
@@ -132,6 +146,14 @@ class MedGemmaAdapter(SegmentationAdapter):
     def _predict_impl(
         self, vol: Volume, roi: Optional[Bbox]
     ) -> AdapterResult:
+        if getattr(self, "_mode", "local") == "vertex":
+            return self._vertex_client.predict(
+                endpoint_id=self.cfg.vertex_endpoint_medgemma,
+                vol=vol,
+                roi=roi,
+                model_name=self.name
+            )
+
         if _MODEL is None or _PROCESSOR is None:
             return empty_result(
                 vol.shape, error="MedGemma not loaded", model=self.name
