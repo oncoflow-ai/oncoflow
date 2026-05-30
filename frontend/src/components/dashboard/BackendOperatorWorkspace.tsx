@@ -9,6 +9,7 @@ import {
   BackendApiError,
   getJobStatus,
   getStudyResults,
+  submitDemoMriSegmentationJob,
   submitMriIngestionJob,
   submitNiftiSegmentationJob,
 } from '@/api/backendWorkspace'
@@ -23,7 +24,7 @@ import type {
 
 const ACTIVE_STATUSES: BackendJobStatus[] = ['queued', 'running']
 
-type ScanFormat = 'nifti' | 'dicom-zip'
+type ScanFormat = 'nifti' | 'dicom-zip' | 'class-demo'
 
 function isNiftiFilename(name: string): boolean {
   const lower = name.toLowerCase()
@@ -123,7 +124,11 @@ export interface BackendOperatorWorkspaceProps {
   headingDescription?: string
   /** When provided (e.g. patient context), replaces the source label field until edited elsewhere */
   prefilledSourceLabel?: string
-  onJobReachedTerminal?: (payload: { studyId: string; status: 'completed' | 'failed' }) => void
+  onJobReachedTerminal?: (payload: {
+    studyId: string
+    status: 'completed' | 'failed'
+    mode: ScanFormat
+  }) => void
 }
 
 export default function BackendOperatorWorkspace({
@@ -143,6 +148,7 @@ export default function BackendOperatorWorkspace({
   const [acquiredAt, setAcquiredAt] = useState('')
   const [localError, setLocalError] = useState<string | null>(null)
   const [activeRun, setActiveRun] = useState<BackendJobSubmission | null>(null)
+  const [activeRunMode, setActiveRunMode] = useState<ScanFormat>('nifti')
   const terminalHandledJobIdRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -161,6 +167,7 @@ export default function BackendOperatorWorkspace({
     },
     onSuccess: run => {
       setActiveRun(run)
+      setActiveRunMode('dicom-zip')
       queryClient.invalidateQueries({ queryKey: ['backend-studies'] })
     },
   })
@@ -188,12 +195,43 @@ export default function BackendOperatorWorkspace({
     },
     onSuccess: run => {
       setActiveRun(run)
+      setActiveRunMode('nifti')
       queryClient.invalidateQueries({ queryKey: ['backend-studies'] })
     },
   })
 
-  const submitMutation = scanFormat === 'nifti' ? niftiMutation : dicomMutation
-  const isSubmitting = niftiMutation.isPending || dicomMutation.isPending
+  const demoMutation = useMutation({
+    mutationFn: ({
+      scanFile,
+      sourceLabel,
+      acquiredAt,
+    }: {
+      scanFile: File
+      sourceLabel?: string
+      acquiredAt?: string
+    }) =>
+      submitDemoMriSegmentationJob({
+        scanFile,
+        sourceLabel,
+        acquiredAt,
+      }),
+    onMutate: () => {
+      setLocalError(null)
+    },
+    onSuccess: run => {
+      setActiveRun(run)
+      setActiveRunMode('class-demo')
+      queryClient.invalidateQueries({ queryKey: ['backend-studies'] })
+    },
+  })
+
+  const submitMutation =
+    scanFormat === 'nifti'
+      ? niftiMutation
+      : scanFormat === 'class-demo'
+        ? demoMutation
+        : dicomMutation
+  const isSubmitting = niftiMutation.isPending || dicomMutation.isPending || demoMutation.isPending
 
   const jobStatusQuery = useQuery({
     queryKey: ['backend-operator-job', activeRun?.jobId],
@@ -226,8 +264,8 @@ export default function BackendOperatorWorkspace({
     if (!jobId || !studyId || !st || (st !== 'completed' && st !== 'failed')) return
     if (terminalHandledJobIdRef.current === jobId) return
     terminalHandledJobIdRef.current = jobId
-    onJobReachedTerminal?.({ studyId, status: st })
-  }, [activeRun?.jobId, activeRun?.studyId, jobStatusQuery.data?.status, onJobReachedTerminal])
+    onJobReachedTerminal?.({ studyId, status: st, mode: activeRunMode })
+  }, [activeRun?.jobId, activeRun?.studyId, activeRunMode, jobStatusQuery.data?.status, onJobReachedTerminal])
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -263,6 +301,19 @@ export default function BackendOperatorWorkspace({
       return
     }
 
+    if (scanFormat === 'class-demo') {
+      if (acquiredAt && Number.isNaN(Date.parse(acquiredAt))) {
+        setLocalError('Acquisition date must be a valid YYYY-MM-DD value.')
+        return
+      }
+      demoMutation.mutate({
+        scanFile: selectedFile,
+        sourceLabel,
+        acquiredAt,
+      })
+      return
+    }
+
     if (!selectedFile.name.toLowerCase().endsWith('.zip')) {
       setLocalError('The workspace currently accepts .zip MRI study archives only.')
       return
@@ -284,6 +335,8 @@ export default function BackendOperatorWorkspace({
           </div>
           <div className="rounded border border-border2 bg-bg px-3 py-2 font-mono text-[11px] text-text3">
             POST <span className="text-text1">/api/v1/jobs/nifti-segmentation</span>
+            <br />
+            POST <span className="text-text1">/api/v1/jobs/demo-mri-segmentation</span>
             <br />
             POST <span className="text-text1">/api/v1/jobs/mri-ingestion</span>
             <br />
@@ -325,6 +378,22 @@ export default function BackendOperatorWorkspace({
                 <button
                   type="button"
                   onClick={() => {
+                    setScanFormat('class-demo')
+                    setSelectedFile(null)
+                    setMaskFile(null)
+                  }}
+                  className={cn(
+                    'border-l border-border2 px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-[0.18em]',
+                    scanFormat === 'class-demo'
+                      ? 'bg-teal text-black'
+                      : 'bg-surface text-text2 hover:text-text1'
+                  )}
+                >
+                  Single Scan
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
                     setScanFormat('dicom-zip')
                     setSelectedFile(null)
                     setMaskFile(null)
@@ -339,18 +408,27 @@ export default function BackendOperatorWorkspace({
                   DICOM Zip
                 </button>
               </div>
+              {scanFormat === 'class-demo' && (
+                <div className="mt-3 border border-teal/25 bg-teal/5 px-3 py-2 text-[12px] leading-relaxed text-text2">
+                  Single-scan analysis mode. Upload an MRI study to run segmentation and generate a structured result.
+                </div>
+              )}
             </div>
 
             <div>
               <label htmlFor={inputId} className="mb-2 block text-[11px] font-mono font-bold uppercase tracking-widest text-text3">
-                {scanFormat === 'nifti' ? 'NIfTI Scan (.nii / .nii.gz)' : 'MRI Study Zip'}
+                {scanFormat === 'dicom-zip'
+                  ? 'MRI Study Zip'
+                  : scanFormat === 'class-demo'
+                    ? 'MRI Upload'
+                    : 'NIfTI Scan (.nii / .nii.gz)'}
               </label>
               <input
                 id={inputId}
                 type="file"
-                {...(scanFormat === 'nifti'
-                  ? {}
-                  : { accept: DICOM_ZIP_ACCEPT })}
+                {...(scanFormat === 'dicom-zip'
+                  ? { accept: DICOM_ZIP_ACCEPT }
+                  : {})}
                 onChange={event => setSelectedFile(event.target.files?.[0] ?? null)}
                 className="block w-full cursor-pointer border border-border2 bg-surface px-3 py-3 text-[13px] text-text2 file:mr-4 file:border-0 file:bg-teal file:px-3 file:py-1.5 file:font-mono file:text-[11px] file:font-bold file:uppercase file:tracking-widest file:text-black"
               />
@@ -364,6 +442,11 @@ export default function BackendOperatorWorkspace({
                   The file dialog shows all files so <span className="font-mono">.nii.gz</span> volumes are never hidden by
                   the browser. Only <span className="font-mono">.nii</span> and <span className="font-mono">.nii.gz</span>{' '}
                   scan names pass validation.
+                </p>
+              )}
+              {scanFormat === 'class-demo' && (
+                <p className="mt-2 text-[11px] text-text3">
+                  Upload an MRI study file to generate a single-scan segmentation result.
                 </p>
               )}
             </div>
@@ -406,7 +489,7 @@ export default function BackendOperatorWorkspace({
                 />
               </div>
 
-              {scanFormat === 'nifti' && (
+              {(scanFormat === 'nifti' || scanFormat === 'class-demo') && (
                 <div>
                   <label htmlFor="acquired-at" className="mb-2 block text-[11px] font-mono font-bold uppercase tracking-widest text-text3">
                     Acquisition Date

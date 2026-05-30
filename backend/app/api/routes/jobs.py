@@ -96,6 +96,46 @@ async def submit_nifti_segmentation_job(
 
 
 @router.post(
+    "/demo-mri-segmentation",
+    response_model=JobSubmissionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def submit_demo_mri_segmentation_job(
+    scan_file: UploadFile = File(...),
+    source_label: str | None = Form(default=None),
+    acquired_at: str | None = Form(default=None),
+) -> JobSubmissionResponse:
+    parsed_date: date | None = None
+    if acquired_at:
+        try:
+            parsed_date = date.fromisoformat(acquired_at)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="acquired_at must be an ISO date (YYYY-MM-DD)",
+            ) from exc
+
+    try:
+        submission = await JobService().submit_demo_mri_segmentation(
+            scan_filename=scan_file.filename or "demo-mri-upload.bin",
+            scan_bytes=await scan_file.read(),
+            content_type=scan_file.content_type,
+            source_label=source_label,
+            acquired_at=parsed_date,
+        )
+    except SubmissionValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+    return JobSubmissionResponse(
+        job_id=str(submission.job_public_id),
+        study_id=str(submission.study_public_id),
+        status=submission.status,
+        stage=submission.stage,
+        submitted_at=submission.submitted_at,
+    )
+
+
+@router.post(
     "/longitudinal-comparison",
     response_model=ComparisonResponse,
     status_code=status.HTTP_200_OK,

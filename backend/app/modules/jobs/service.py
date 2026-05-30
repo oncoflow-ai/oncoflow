@@ -16,6 +16,7 @@ from app.modules.jobs.state_machine import transition_job
 from app.modules.jobs.worker_tasks import (
     WorkerDispatchEnvelope,
     dispatch_ingestion_job,
+    execute_demo_mri_segmentation_job,
     execute_ingestion_job,
     execute_nifti_segmentation_job,
     forget_worker_thread,
@@ -291,6 +292,80 @@ class JobService:
             submitted_at=submitted_at,
         )
 
+    async def submit_demo_mri_segmentation(
+        self,
+        *,
+        scan_filename: str,
+        scan_bytes: bytes,
+        content_type: str | None,
+        source_label: str | None,
+        acquired_at: date | None,
+    ) -> JobSubmissionResult:
+        if not scan_bytes:
+            raise SubmissionValidationError(400, "scan_file must not be empty")
+
+        safe_filename = Path(scan_filename or "demo-mri-upload.bin").name
+        if not safe_filename:
+            safe_filename = "demo-mri-upload.bin"
+
+        study_public_id = uuid4()
+        submitted_at = datetime.now(UTC)
+
+        with self._session_factory() as session:
+            study = Study(
+                public_id=study_public_id,
+                study_instance_uid=f"demo-{study_public_id}",
+                source_kind="demo-mri-upload",
+                source_metadata={
+                    "source_label": source_label,
+                    "uploaded_filename": safe_filename,
+                    "content_type": content_type,
+                    "upload_discarded": True,
+                    "acquired_at": acquired_at.isoformat() if acquired_at else None,
+                    "demo": True,
+                },
+                staging_status="staged",
+                acquired_at=acquired_at,
+            )
+            session.add(study)
+            session.flush()
+
+            job = Job(
+                study_id=study.id,
+                job_type="demo-mri-segmentation",
+                status="queued",
+                stage="staged",
+                created_at=submitted_at,
+                updated_at=submitted_at,
+            )
+            session.add(job)
+            session.flush()
+
+            session.add(
+                JobEvent(
+                    job_id=job.id,
+                    status="queued",
+                    stage="staged",
+                    event_type="transition",
+                    payload={"reason": "demo MRI segmentation job submitted"},
+                    created_at=submitted_at,
+                )
+            )
+            session.commit()
+
+            self._dispatch_demo_mri_worker(
+                job_id=str(job.public_id),
+                study_id=str(study.public_id),
+            )
+
+        return JobSubmissionResult(
+            job_public_id=job.public_id,
+            study_public_id=study.public_id,
+            status=job.status,
+            stage=job.stage,
+            submitted_at=submitted_at,
+        )
+
     def get_job_status(self, job_public_id: str) -> JobStatusResult:
         try:
             parsed_job_id = UUID(job_public_id)
@@ -398,6 +473,38 @@ class JobService:
         logger.info(
             "Queued NIfTI job for external worker dispatch (no-op in deferred mode)",
             extra={"job_id": job_id, "study_id": study_id, "mode": settings.job_execution_mode},
+        )
+
+    def _dispatch_demo_mri_worker(self, *, job_id: str, study_id: str) -> None:
+        settings = get_settings()
+        if settings.job_execution_mode == "threaded":
+            logger.info(
+                "Dispatching demo MRI job on background thread",
+                extra={
+                    "job_id": job_id,
+                    "study_id": study_id,
+                    "mode": settings.job_execution_mode,
+                },
+            )
+            thread = threading.Thread(
+                target=execute_demo_mri_segmentation_job,
+                kwargs={"job_id": job_id},
+                daemon=False,
+                name=f"oncoflow-demo-{job_id[:8]}",
+            )
+            register_worker_thread(job_id, thread)
+            thread.start()
+            if not getattr(thread, "is_alive", lambda: False)():
+                forget_worker_thread(job_id)
+            return
+
+        logger.info(
+            "Queued demo MRI job for external worker dispatch (no-op in deferred mode)",
+            extra={
+                "job_id": job_id,
+                "study_id": study_id,
+                "mode": settings.job_execution_mode,
+            },
         )
 
     def _extract_archive(self, archive_bytes: bytes, destination: Path) -> int:

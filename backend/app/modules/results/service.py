@@ -88,4 +88,5 @@ def get_case_result_payload(*, study_id: str) -> StoredCaseResult:
             lesions=lesion_payloads,
             needs_review=bool(study_result.needs_review),
             case_qc_reasons=tuple(study_result.summary_metadata.get("case_qc_reasons", [])),
+            metadata=dict(study_result.summary_metadata),
         )

@@ -118,4 +118,5 @@ def get_case_results(study_id: str) -> StoredCaseResultResponse:
         ],
         needs_review=result.needs_review,
         case_qc_reasons=list(result.case_qc_reasons),
+        metadata=result.metadata,
     )

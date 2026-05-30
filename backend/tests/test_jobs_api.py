@@ -8,11 +8,15 @@ from uuid import UUID
 
 import pytest
 
+from app.core.config import get_settings
 from app.infra.db.models import Artifact, Job
 from app.infra.db.session import create_session_factory
 from app.modules.jobs.service import JobService
 from app.modules.jobs.state_machine import transition_job
-from app.modules.jobs.worker_tasks import WorkerDispatchEnvelope
+from app.modules.jobs.worker_tasks import (
+    WorkerDispatchEnvelope,
+    execute_demo_mri_segmentation_job,
+)
 
 
 def _zip_bytes(files: dict[str, bytes]) -> bytes:
@@ -154,3 +158,108 @@ def test_get_job_status_returns_failure_payload(client) -> None:
 def test_invalid_state_transition_is_rejected() -> None:
     with pytest.raises(ValueError, match="Invalid job transition"):
         transition_job("completed", "running", stage="profiling")
+
+
+def test_post_demo_mri_segmentation_returns_queued_job(client) -> None:
+    response = client.post(
+        "/api/v1/jobs/demo-mri-segmentation",
+        files={"scan_file": ("class-demo.nii.gz", b"mri-bytes", "application/gzip")},
+        data={"source_label": "Class demo MRI", "acquired_at": "2024-01-15"},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "queued"
+    assert body["stage"] == "staged"
+    UUID(body["jobId"])
+    UUID(body["studyId"])
+
+    session_factory = create_session_factory()
+    with session_factory() as session:
+        job = session.query(Job).one()
+        artifacts = session.query(Artifact).all()
+
+        assert job.job_type == "demo-mri-segmentation"
+        assert job.status == "queued"
+        assert artifacts == []
+        assert job.study.source_metadata["upload_discarded"] is True
+
+
+@pytest.mark.parametrize(
+    ("files", "data", "expected_status"),
+    [
+        ({}, {}, 422),
+        ({"scan_file": ("empty.nii.gz", b"", "application/gzip")}, {}, 400),
+        (
+            {"scan_file": ("class-demo.nii.gz", b"mri-bytes", "application/gzip")},
+            {"acquired_at": "not-a-date"},
+            400,
+        ),
+    ],
+)
+def test_post_demo_mri_segmentation_rejects_invalid_payloads(
+    client,
+    files,
+    data,
+    expected_status: int,
+) -> None:
+    response = client.post(
+        "/api/v1/jobs/demo-mri-segmentation",
+        files=files,
+        data=data,
+    )
+
+    assert response.status_code == expected_status
+
+
+def test_demo_mri_segmentation_completes_and_exposes_report(
+    client,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ONCOFLOW_JOB_EXECUTION_MODE", "threaded")
+    monkeypatch.setenv("ONCOFLOW_DEMO_JOB_DELAY_SECONDS", "0")
+    get_settings.cache_clear()
+
+    def dispatch_inline(_self, *, job_id: str, study_id: str) -> None:
+        execute_demo_mri_segmentation_job(job_id=job_id)
+
+    monkeypatch.setattr(
+        "app.modules.jobs.service.JobService._dispatch_demo_mri_worker",
+        dispatch_inline,
+    )
+
+    submit_response = client.post(
+        "/api/v1/jobs/demo-mri-segmentation",
+        files={"scan_file": ("class-demo.nii.gz", b"mri-bytes", "application/gzip")},
+        data={"source_label": "Class demo MRI", "acquired_at": "2024-01-15"},
+    )
+
+    assert submit_response.status_code == 201
+    submitted = submit_response.json()
+
+    status_response = client.get(f"/api/v1/jobs/{submitted['jobId']}")
+    assert status_response.status_code == 200
+    assert status_response.json()["status"] == "completed"
+    assert status_response.json()["stage"] == "completed"
+
+    result_response = client.get(f"/api/v1/results/{submitted['studyId']}")
+    assert result_response.status_code == 200
+    body = result_response.json()
+    assert body["studyId"] == submitted["studyId"]
+    assert body["needsReview"] is False
+    assert body["lesions"][0]["lesionId"] == "lesion-001"
+    assert body["lesions"][0]["measurements"]["volumeMm3"] > 0
+    assert body["lesions"][0]["metadata"]["runner"]["model_id"] == (
+        "oncoflow-demo-ensemble"
+    )
+    assert body["lesions"][0]["metadata"]["runner"]["execution_backend"] == (
+        "simulated"
+    )
+    assert body["metadata"]["source"] == "ground-truth-demo-mask"
+    assert body["metadata"]["report"]["title"] == (
+        "AI brain MRI segmentation report"
+    )
+    assert "previous scan" in body["metadata"]["report"]["comparison"]
+    assert body["metadata"]["report"]["quantitative"]["volume_change_pct"] > 0
+    assert len(body["metadata"]["report"]["recommendations"]) == 3
+    assert "disclaimer" not in body["metadata"]["report"]

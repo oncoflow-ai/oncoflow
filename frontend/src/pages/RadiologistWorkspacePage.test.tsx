@@ -10,6 +10,7 @@ const {
   getPatientsMock,
   getScansMock,
   submitMriIngestionJobMock,
+  submitDemoMriSegmentationJobMock,
   submitNiftiSegmentationJobMock,
   getJobStatusMock,
   getStudyResultsMock,
@@ -33,6 +34,7 @@ const {
     getPatientsMock: vi.fn(),
     getScansMock: vi.fn(),
     submitMriIngestionJobMock: vi.fn(),
+    submitDemoMriSegmentationJobMock: vi.fn(),
     submitNiftiSegmentationJobMock: vi.fn(),
     getJobStatusMock: vi.fn(),
     getStudyResultsMock: vi.fn(),
@@ -53,6 +55,7 @@ vi.mock('@/api/scans', () => ({
 vi.mock('@/api/backendWorkspace', () => ({
   BackendApiError: MockBackendApiError,
   submitMriIngestionJob: submitMriIngestionJobMock,
+  submitDemoMriSegmentationJob: submitDemoMriSegmentationJobMock,
   submitNiftiSegmentationJob: submitNiftiSegmentationJobMock,
   getJobStatus: getJobStatusMock,
   getStudyResults: getStudyResultsMock,
@@ -99,12 +102,17 @@ async function selectDicomFormat(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: /DICOM Zip/i }))
 }
 
+async function selectClassDemoFormat(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: /Single Scan/i }))
+}
+
 describe('RadiologistWorkspacePage', () => {
   beforeEach(() => {
     vi.useRealTimers()
     getPatientsMock.mockReset()
     getScansMock.mockReset()
     submitMriIngestionJobMock.mockReset()
+    submitDemoMriSegmentationJobMock.mockReset()
     submitNiftiSegmentationJobMock.mockReset()
     getJobStatusMock.mockReset()
     getStudyResultsMock.mockReset()
@@ -219,6 +227,58 @@ describe('RadiologistWorkspacePage', () => {
 
     await waitFor(() => {
       expect(submitMriIngestionJobMock).toHaveBeenCalledWith(file, 'local-demo')
+    })
+  })
+
+  it('submits class demo uploads to the demo MRI endpoint', async () => {
+    submitDemoMriSegmentationJobMock.mockResolvedValue({
+      jobId: 'job-demo-1',
+      studyId: 'study-demo-1',
+      status: 'queued',
+      stage: 'staged',
+      submittedAt: '2026-04-12T11:24:03.996257Z',
+    })
+    getJobStatusMock.mockResolvedValue({
+      jobId: 'job-demo-1',
+      studyId: 'study-demo-1',
+      status: 'completed',
+      stage: 'completed',
+      submittedAt: '2026-04-12T11:24:03.996257Z',
+      error: null,
+    })
+    getStudyResultsMock.mockResolvedValue({
+      studyId: 'study-demo-1',
+      resultArtifact: {
+        artifactKind: 'study-result-bundle',
+        storageRoot: 'derived',
+        relativePath: 'studies/study-demo-1/results/study-result.json',
+      },
+      lesions: [],
+      needsReview: false,
+      caseQcReasons: [],
+      metadata: {
+        source: 'ground-truth-demo-mask',
+      },
+    })
+
+    renderRadiologist()
+    const user = userEvent.setup()
+    await selectAdaPatient(user)
+    await selectClassDemoFormat(user)
+    const file = new File(['mri-body'], 'demo-scan.nii.gz', { type: 'application/gzip' })
+
+    await user.upload(await screen.findByLabelText('MRI Upload'), file)
+    await user.clear(screen.getByLabelText('Source Label'))
+    await user.type(screen.getByLabelText('Source Label'), 'Class demo MRI')
+    await user.click(screen.getByRole('button', { name: 'Upload And Start' }))
+
+    await waitFor(() => {
+      expect(submitDemoMriSegmentationJobMock).toHaveBeenCalledTimes(1)
+    })
+    expect(submitDemoMriSegmentationJobMock).toHaveBeenCalledWith({
+      scanFile: file,
+      sourceLabel: 'Class demo MRI',
+      acquiredAt: '',
     })
   })
 

@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 import logging
 import math
+import gzip
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 from shutil import copy2
@@ -46,19 +48,82 @@ def _ensure_nibabel():
     return nib, np
 
 
+def _load_mask_data_with_fallback(mask_absolute_path: Path):
+    try:
+        nib, np = _ensure_nibabel()
+        img = nib.load(str(mask_absolute_path))
+        data = np.asarray(img.dataobj)
+        spacing_raw = img.header.get_zooms()[:3]
+        spacing = (
+            float(spacing_raw[0]) or 1.0,
+            float(spacing_raw[1]) or 1.0,
+            float(spacing_raw[2]) or 1.0,
+        )
+        return data, spacing
+    except RuntimeError:
+        import numpy as np  # type: ignore
+
+        raw = (
+            gzip.decompress(mask_absolute_path.read_bytes())
+            if mask_absolute_path.name.endswith(".gz")
+            else mask_absolute_path.read_bytes()
+        )
+        if len(raw) < 352:
+            raise RuntimeError("NIfTI mask is too small to contain a valid header")
+
+        sizeof_hdr = struct.unpack("<i", raw[:4])[0]
+        endian = "<"
+        if sizeof_hdr != 348:
+            sizeof_hdr = struct.unpack(">i", raw[:4])[0]
+            endian = ">"
+        if sizeof_hdr != 348:
+            raise RuntimeError("NIfTI mask header is not valid")
+
+        dims = struct.unpack(f"{endian}8h", raw[40:56])
+        shape = tuple(int(value) for value in dims[1:4])
+        if len(shape) != 3 or any(value <= 0 for value in shape):
+            raise RuntimeError("NIfTI mask must be a 3D volume")
+
+        datatype = struct.unpack(f"{endian}h", raw[70:72])[0]
+        pixdim = struct.unpack(f"{endian}8f", raw[76:108])
+        vox_offset = int(struct.unpack(f"{endian}f", raw[108:112])[0])
+        dtype_map = {
+            2: np.uint8,
+            4: np.int16,
+            8: np.int32,
+            16: np.float32,
+            64: np.float64,
+            256: np.int8,
+            512: np.uint16,
+            768: np.uint32,
+        }
+        dtype = dtype_map.get(datatype)
+        if dtype is None:
+            raise RuntimeError(f"Unsupported NIfTI mask datatype: {datatype}")
+
+        voxel_count = int(shape[0] * shape[1] * shape[2])
+        data = np.frombuffer(
+            raw,
+            dtype=np.dtype(dtype).newbyteorder(endian),
+            count=voxel_count,
+            offset=vox_offset,
+        )
+        data = data.reshape(shape, order="F")
+        spacing = (
+            float(pixdim[1]) or 1.0,
+            float(pixdim[2]) or 1.0,
+            float(pixdim[3]) or 1.0,
+        )
+        return data, spacing
+
+
 def measure_mask(mask_absolute_path: Path) -> NiftiMaskMeasurements:
     """Compute volume, longest-axis diameter, bbox and spacing from a NIfTI mask."""
 
-    nib, np = _ensure_nibabel()
-    img = nib.load(str(mask_absolute_path))
-    data = np.asarray(img.dataobj)
+    data, spacing = _load_mask_data_with_fallback(mask_absolute_path)
+    import numpy as np  # type: ignore
+
     occupied = data > 0
-    spacing_raw = img.header.get_zooms()[:3]
-    spacing = (
-        float(spacing_raw[0]) or 1.0,
-        float(spacing_raw[1]) or 1.0,
-        float(spacing_raw[2]) or 1.0,
-    )
 
     voxel_count = int(occupied.sum())
     voxel_volume_mm3 = spacing[0] * spacing[1] * spacing[2]
@@ -109,6 +174,8 @@ def materialize_nifti_study_with_mask(
     session,
     study_public_id: UUID,
     mask_source_absolute_path: Path,
+    runner_metadata: dict[str, object] | None = None,
+    result_metadata: dict[str, object] | None = None,
 ) -> int:
     """Persist segmentation artifacts + StudyResult for a NIfTI demo upload."""
 
@@ -129,12 +196,21 @@ def materialize_nifti_study_with_mask(
         "spacing_mm": list(measurements.spacing_mm),
         "voxel_count": measurements.voxel_count,
     }
-    runner_meta = {
+    runner_meta = runner_metadata or {
         "model_id": "ground-truth-mask",
         "runner_version": "demo-1",
         "execution_backend": "passthrough",
         "warnings": [],
     }
+    result_meta = result_metadata or {
+        "segmentation_run_id": segmentation_run_id,
+        "case_qc_reasons": [],
+        "lesion_count": 1,
+        "source": "nifti-demo",
+    }
+    result_meta.setdefault("segmentation_run_id", segmentation_run_id)
+    result_meta.setdefault("case_qc_reasons", [])
+    result_meta.setdefault("lesion_count", 1)
 
     record_study_artifact(
         session,
@@ -149,7 +225,7 @@ def materialize_nifti_study_with_mask(
             "runner": runner_meta,
             "needs_review": False,
             "slot_provenance": [],
-            "inference": {"source": "user-uploaded-mask"},
+            "inference": {"source": result_meta.get("source", "user-uploaded-mask")},
         },
     )
 
@@ -164,6 +240,7 @@ def materialize_nifti_study_with_mask(
                 "case_qc_reasons": [],
                 "lesion_ids": [lesion_id],
                 "runner": runner_meta,
+                "report": result_meta.get("report"),
             }
         )
     )
@@ -178,6 +255,7 @@ def materialize_nifti_study_with_mask(
             "case_qc_reasons": [],
             "lesion_count": 1,
             "runner": runner_meta,
+            "report": result_meta.get("report"),
         },
     )
 
@@ -185,12 +263,7 @@ def materialize_nifti_study_with_mask(
         study_id=study.id,
         result_kind="single-scan",
         needs_review=False,
-        summary_metadata={
-            "segmentation_run_id": segmentation_run_id,
-            "case_qc_reasons": [],
-            "lesion_count": 1,
-            "source": "nifti-demo",
-        },
+        summary_metadata=result_meta,
     )
     session.add(study_result)
     session.flush()
@@ -216,6 +289,7 @@ def materialize_nifti_study_with_mask(
             "runner": runner_meta,
             "spacing_mm": list(measurements.spacing_mm),
             "voxel_count": measurements.voxel_count,
+            "report": result_meta.get("report"),
         },
     )
     session.add(lesion_row)
@@ -237,6 +311,7 @@ def materialize_nifti_study_with_mask(
                         "bounding_box": measurements.bounding_box,
                     }
                 ],
+                "metadata": result_meta,
             }
         )
     )
@@ -249,7 +324,8 @@ def materialize_nifti_study_with_mask(
             "segmentation_run_id": segmentation_run_id,
             "study_result_id": study_result.id,
             "lesion_ids": [lesion_id],
-            "source": "nifti-demo",
+            "source": result_meta.get("source", "nifti-demo"),
+            "report": result_meta.get("report"),
         },
     )
 
