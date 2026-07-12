@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>OncoFlow — Quantitative MRI Tumor Tracking</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="poster" aria-label="OncoFlow project poster">
+    <header class="masthead">
+      <div class="brand-block">
+        <div class="mark" aria-hidden="true">
+          <svg viewBox="0 0 46 46" role="img">
+            <path d="M7 23c5-12 11-17 16-17s11 5 16 17c-5 12-11 17-16 17S12 35 7 23Z" fill="none" stroke="currentColor" stroke-width="2"/>
+            <circle cx="23" cy="23" r="8" fill="none" stroke="currentColor" stroke-width="2"/>
+            <circle cx="23" cy="23" r="3" fill="currentColor"/>
+          </svg>
+        </div>
+        <div>
+          <div class="eyebrow">MRI AI BACKEND · RESEARCH &amp; PILOT REVIEW</div>
+          <h1>Onco<span>Flow</span></h1>
+        </div>
+      </div>
+      <div class="headline-block">
+        <h2>From serial MRI scans to<br><em>reproducible lesion measurements.</em></h2>
+        <p>OncoFlow detects and segments bone-related tumors, turning complex MRI data into traceable measurements and—next—clear interval change.</p>
+      </div>
+      <div class="status-key" aria-label="Capability status legend">
+        <div><span class="status-dot implemented"></span><strong>IMPLEMENTED</strong><small>single-scan foundation</small></div>
+        <div><span class="status-dot next"></span><strong>NEXT</strong><small>paired longitudinal flow</small></div>
+      </div>
+    </header>
+
+    <section class="purpose-row">
+      <article class="problem card">
+        <div class="section-number">01</div>
+        <div>
+          <h3>The clinical-research gap</h3>
+          <p>Visual comparison across MRI scans is time-consuming and can make small, irregular lesions difficult to quantify consistently.</p>
+        </div>
+      </article>
+      <div class="purpose-arrow" aria-hidden="true"><span></span></div>
+      <article class="value card">
+        <div class="section-number accent">02</div>
+        <div>
+          <h3>The OncoFlow value</h3>
+          <p>A backend-first workflow that preserves imaging lineage while producing lesion-level masks and physical measurements for structured review.</p>
+        </div>
+      </article>
+      <aside class="scope-note">
+        <strong>Focused by design</strong>
+        <span>MRI only · DICOM in · NIfTI-centered processing · paired comparison before multi-timepoint history</span>
+      </aside>
+    </section>
+
+    <section class="pipeline-section">
+      <div class="section-heading">
+        <div>
+          <span class="kicker">CORE DATA FLOW</span>
+          <h3>One traceable path from image to insight</h3>
+        </div>
+        <p>Each stage produces durable artifacts or structured records for the next stage—without re-running analysis at retrieval time.</p>
+      </div>
+
+      <div class="timeline-labels" aria-hidden="true">
+        <div class="implemented-label"><span>IMPLEMENTED TODAY</span></div>
+        <div class="next-label"><span>NEXT: PAIRED COMPARISON</span></div>
+      </div>
+
+      <div class="pipeline">
+        <article class="stage active">
+          <div class="stage-index">01</div>
+          <div class="stage-icon dicom-icon" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </div>
+          <h4>DICOM intake</h4>
+          <p>MRI study upload, profiling &amp; validation</p>
+          <small>de-identification boundary</small>
+        </article>
+        <div class="flow-arrow active-arrow" aria-hidden="true"></div>
+        <article class="stage active">
+          <div class="stage-index">02</div>
+          <div class="stage-icon volume-icon" aria-hidden="true">
+            <i></i><i></i><i></i>
+          </div>
+          <h4>NIfTI volume</h4>
+          <p>Normalized image &amp; geometry metadata</p>
+          <small>analysis-ready artifact</small>
+        </article>
+        <div class="flow-arrow active-arrow" aria-hidden="true"></div>
+        <article class="stage active featured">
+          <div class="stage-index">03</div>
+          <div class="stage-icon network-icon" aria-hidden="true">
+            <b></b><b></b><b></b><b></b><b></b>
+          </div>
+          <h4>nnU-Net inference</h4>
+          <p>Canonical MRI bundle → lesion masks</p>
+          <small>model-backed segmentation</small>
+        </article>
+        <div class="flow-arrow active-arrow" aria-hidden="true"></div>
+        <article class="stage active">
+          <div class="stage-index">04</div>
+          <div class="stage-icon measure-icon" aria-hidden="true">
+            <span></span>
+          </div>
+          <h4>Measurements</h4>
+          <p>Stable lesion ID, volume &amp; longest diameter</p>
+          <small>physical units + mask lineage</small>
+        </article>
+        <div class="flow-arrow transition-arrow" aria-hidden="true"><span>PAIR</span></div>
+        <article class="stage planned">
+          <div class="stage-index">05</div>
+          <div class="stage-icon register-icon" aria-hidden="true">
+            <i></i><i></i>
+          </div>
+          <h4>Register &amp; match</h4>
+          <p>Align baseline / follow-up and pair lesions</p>
+          <small>new · resolved · unmatched</small>
+        </article>
+        <div class="flow-arrow planned-arrow" aria-hidden="true"></div>
+        <article class="stage planned">
+          <div class="stage-index">06</div>
+          <div class="stage-icon delta-icon" aria-hidden="true">Δ</div>
+          <h4>Interval change</h4>
+          <p>Volume, shape &amp; status deltas</p>
+          <small>structured comparison</small>
+        </article>
+        <div class="flow-arrow planned-arrow" aria-hidden="true"></div>
+        <article class="stage planned">
+          <div class="stage-index">07</div>
+          <div class="stage-icon report-icon" aria-hidden="true"><span></span><span></span><span></span></div>
+          <h4>Clinical report</h4>
+          <p>Review-ready summary &amp; result artifacts</p>
+          <small>human interpretation required</small>
+        </article>
+      </div>
+    </section>
+
+    <section class="detail-grid">
+      <article class="mri-story panel">
+        <div class="panel-title">
+          <div><span class="kicker">PAIRED MRI CONCEPT</span><h3>Make change visible—and measurable</h3></div>
+          <span class="planned-badge">NEXT</span>
+        </div>
+        <div class="scan-comparison">
+          <figure class="scan-figure">
+            <svg class="scan" viewBox="0 0 180 130" role="img" aria-label="Stylized baseline MRI with segmented lesion">
+              <defs>
+                <radialGradient id="mriA" cx="50%" cy="47%" r="52%"><stop offset="0" stop-color="#dde7eb"/><stop offset=".35" stop-color="#879aa5"/><stop offset=".72" stop-color="#354b58"/><stop offset="1" stop-color="#0d202c"/></radialGradient>
+                <filter id="grainA"><feTurbulence baseFrequency=".45" numOctaves="2" seed="4" type="fractalNoise" result="n"/><feBlend in="SourceGraphic" in2="n" mode="soft-light"/></filter>
+              </defs>
+              <rect width="180" height="130" rx="8" fill="#091a25"/>
+              <ellipse cx="90" cy="65" rx="59" ry="56" fill="url(#mriA)"/>
+              <ellipse cx="90" cy="65" rx="42" ry="46" fill="none" stroke="#b9c9cf" stroke-opacity=".24" stroke-width="5"/>
+              <path d="M62 29c15 12 41 9 55 0M52 66c19-12 57-13 77-1M62 102c17-10 41-8 56 1" fill="none" stroke="#0a1e29" stroke-opacity=".55" stroke-width="4"/>
+              <path d="M105 73c8-8 20-5 23 4 4 12-4 23-17 24-11 1-17-8-15-17 1-5 4-8 9-11Z" fill="#ff9e57" fill-opacity=".48" stroke="#ffb16f" stroke-width="2"/>
+              <path d="M98 108h31" stroke="#f6fafb" stroke-width="2"/><path d="M98 104v8M129 104v8" stroke="#f6fafb" stroke-width="1.5"/>
+            </svg>
+            <figcaption><strong>BASELINE</strong><span>segmented lesion mask</span></figcaption>
+          </figure>
+          <div class="comparison-axis" aria-hidden="true">
+            <span>T₀</span><div><i></i></div><span>T₁</span>
+            <b>REGISTER · MATCH · COMPARE</b>
+          </div>
+          <figure class="scan-figure">
+            <svg class="scan" viewBox="0 0 180 130" role="img" aria-label="Stylized follow-up MRI with segmented lesion">
+              <defs>
+                <radialGradient id="mriB" cx="50%" cy="47%" r="52%"><stop offset="0" stop-color="#dbe6ea"/><stop offset=".35" stop-color="#8297a1"/><stop offset=".72" stop-color="#324954"/><stop offset="1" stop-color="#0d202c"/></radialGradient>
+                <filter id="grainB"><feTurbulence baseFrequency=".45" numOctaves="2" seed="7" type="fractalNoise" result="n"/><feBlend in="SourceGraphic" in2="n" mode="soft-light"/></filter>
+              </defs>
+              <rect width="180" height="130" rx="8" fill="#091a25"/>
+              <ellipse cx="90" cy="65" rx="59" ry="56" fill="url(#mriB)"/>
+              <ellipse cx="90" cy="65" rx="42" ry="46" fill="none" stroke="#b9c9cf" stroke-opacity=".24" stroke-width="5"/>
+              <path d="M62 29c15 12 41 9 55 0M52 66c19-12 57-13 77-1M62 102c17-10 41-8 56 1" fill="none" stroke="#0a1e29" stroke-opacity=".55" stroke-width="4"/>
+              <path d="M101 68c11-11 27-7 31 6 5 15-5 28-21 30-15 1-23-11-20-23 2-6 5-10 10-13Z" fill="#ff9e57" fill-opacity=".48" stroke="#ffb16f" stroke-width="2"/>
+              <path d="M91 112h43" stroke="#f6fafb" stroke-width="2"/><path d="M91 108v8M134 108v8" stroke="#f6fafb" stroke-width="1.5"/>
+            </svg>
+            <figcaption><strong>FOLLOW-UP</strong><span>corresponding lesion mask</span></figcaption>
+          </figure>
+          <div class="concept-result">
+            <span>OUTPUT</span>
+            <strong>Δ volume</strong>
+            <strong>Δ diameter</strong>
+            <strong>match status</strong>
+            <small>Conceptual fields—no efficacy or performance claim</small>
+          </div>
+        </div>
+      </article>
+
+      <article class="outputs panel">
+        <div class="panel-title">
+          <div><span class="kicker">STRUCTURED OUTPUTS</span><h3>Built for machines and reviewers</h3></div>
+        </div>
+        <div class="output-list">
+          <div class="output-item"><span class="output-no">01</span><div><strong>Lesion mask</strong><small>Reusable segmentation artifact with image lineage</small></div></div>
+          <div class="output-item"><span class="output-no">02</span><div><strong>Physical measurements</strong><small>Volume and longest diameter per stable lesion ID</small></div></div>
+          <div class="output-item"><span class="output-no">03</span><div><strong>Results API</strong><small>Case metadata, artifacts and machine-readable lesion records</small></div></div>
+          <div class="output-item future-output"><span class="output-no">04</span><div><strong>Comparison + report</strong><small>Planned interval-change bundle and review summary</small></div><em>NEXT</em></div>
+        </div>
+      </article>
+
+      <article class="architecture panel">
+        <div class="panel-title">
+          <div><span class="kicker">SYSTEM ARCHITECTURE</span><h3>Asynchronous by default</h3></div>
+        </div>
+        <div class="arch-flow">
+          <div class="arch-node"><b>01</b><strong>FastAPI</strong><small>submit study</small></div>
+          <span class="mini-arrow"></span>
+          <div class="arch-node"><b>02</b><strong>Job queue</strong><small>queued · running</small></div>
+          <span class="mini-arrow"></span>
+          <div class="arch-node highlight"><b>03</b><strong>Worker</strong><small>convert · infer · measure</small></div>
+          <span class="mini-arrow"></span>
+          <div class="arch-node"><b>04</b><strong>Persist</strong><small>metadata + artifacts</small></div>
+          <span class="mini-arrow"></span>
+          <div class="arch-node"><b>05</b><strong>Results API</strong><small>retrieve by study ID</small></div>
+        </div>
+        <div class="arch-foot">
+          <span><i class="store database"></i>PostgreSQL metadata</span>
+          <span><i class="store object"></i>managed image artifacts</span>
+          <span><i class="store queue"></i>Redis / Celery orchestration target</span>
+        </div>
+      </article>
+    </section>
+
+    <footer class="guardrails">
+      <div class="guardrail-title">
+        <span class="kicker">GUARDRAILS</span>
+        <h3>Designed for responsible review</h3>
+        <p>Quantitative support—not diagnosis or treatment recommendation.</p>
+      </div>
+      <div class="guardrail-item">
+        <span class="shield-icon" aria-hidden="true">01</span>
+        <div><strong>Privacy boundary</strong><small>De-identification and PHI-safe descriptors at intake and review surfaces</small></div>
+      </div>
+      <div class="guardrail-item">
+        <span class="shield-icon" aria-hidden="true">02</span>
+        <div><strong>Lineage &amp; auditability</strong><small>Stable study / lesion identifiers and traceable stored artifacts</small></div>
+      </div>
+      <div class="guardrail-item">
+        <span class="shield-icon" aria-hidden="true">03</span>
+        <div><strong>QC + human review</strong><small>Reviewable masks and quality signals; interpretation remains with qualified users</small></div>
+      </div>
+      <div class="guardrail-item planned-guardrail">
+        <span class="shield-icon" aria-hidden="true">04</span>
+        <div><strong>Access control roadmap</strong><small>Authorized result access and audit logging planned for pilot hardening</small></div>
+      </div>
+    </footer>
+  </main>
+</body>
+</html>
