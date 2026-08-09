@@ -82,6 +82,27 @@ def configure_logging() -> None:
             format="%(asctime)s %(levelname)s %(name)s %(message)s",
         )
 
+    audit_logger = logging.getLogger("oncoflow.audit")
+    audit_logger.propagate = False
+
+    if not audit_logger.handlers:
+        from logging.handlers import RotatingFileHandler
+        from pathlib import Path
+        from pythonjsonlogger.jsonlogger import JsonFormatter
+
+        storage_path = Path(settings.storage_root).expanduser().resolve()
+        storage_path.mkdir(parents=True, exist_ok=True)
+        
+        audit_file = storage_path / "audit.log"
+        handler = RotatingFileHandler(
+            audit_file, maxBytes=10 * 1024 * 1024, backupCount=5
+        )
+        
+        formatter = JsonFormatter("%(asctime)s %(levelname)s %(message)s")
+        handler.setFormatter(formatter)
+        audit_logger.addHandler(handler)
+        audit_logger.setLevel(logging.INFO)
+
 
 def create_app() -> FastAPI:
     configure_logging()
