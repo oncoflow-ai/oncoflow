@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 from uuid import UUID
@@ -11,6 +11,7 @@ from app.modules.artifacts.storage import resolve_artifact_location
 from app.modules.ingestion.profiling import StudyProfile, profile_staged_study
 from app.modules.ingestion.validation import validate_study_profile
 from app.infra.imaging.dcm2niix_wrapper import convert_dicom_series
+from app.infra.imaging.dicom_anonymizer import anonymize_dicom_series
 
 
 @dataclass(frozen=True)
@@ -102,9 +103,18 @@ def process_staged_study_with_stages(
         if profiled.classification != "processable":
             continue
 
+        stage_callback("anonymizing")
+        relative_dir = f"studies/{study.public_id}/series/{series_row.id}"
+        anonymized_dir = resolve_artifact_location("anonymized", relative_dir).absolute_path
+        anonymized_files = anonymize_dicom_series(
+            record=record,
+            output_dir=Path(anonymized_dir),
+            patient_uuid=study.patient_public_id,
+        )
+        record = replace(record, files=anonymized_files)
+
         stage_callback("converting")
         processable_series += 1
-        relative_dir = f"studies/{study.public_id}/series/{series_row.id}"
         output_dir = resolve_artifact_location("derived", relative_dir).absolute_path
         result = convert_dicom_series(record, output_dir, filename_stem="volume")
 

@@ -5,7 +5,7 @@ import logging
 import threading
 import zipfile
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import timezone, date, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -99,7 +99,7 @@ class JobService:
         series_files = self._extract_archive(archive_bytes, extracted_location.absolute_path)
 
         study_public_id = uuid4()
-        submitted_at = datetime.now(UTC)
+        submitted_at = datetime.now(timezone.utc)
 
         with self._session_factory() as session:
             study = Study(
@@ -216,7 +216,7 @@ class JobService:
             mask_location.absolute_path.write_bytes(mask_bytes)
 
         study_public_id = uuid4()
-        submitted_at = datetime.now(UTC)
+        submitted_at = datetime.now(timezone.utc)
 
         with self._session_factory() as session:
             study = Study(
