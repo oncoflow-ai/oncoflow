@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import UUID
 
 from app.api.schemas.jobs import JobErrorPayload
+from app.core.audit import log_audit_event
 from app.infra.db.models import Artifact, Job, JobEvent, Study
 from app.infra.db.session import create_session_factory
 from app.core.config import get_settings
@@ -148,6 +149,13 @@ def execute_ingestion_job(*, job_id: str) -> WorkerDispatchEnvelope:
             job.stage = completed_state.stage
             job.failure_payload = None
             log_stage("info", "Ingestion worker completed", study_id=str(study.public_id), stage="completed")
+            
+            log_audit_event(
+                action="JOB_COMPLETED",
+                resource_id=job_id,
+                details={"study_id": str(study.public_id), "type": "ingestion"}
+            )
+            
             session.add(
                 JobEvent(
                     job_id=job.id,
@@ -275,6 +283,13 @@ def execute_nifti_segmentation_job(*, job_id: str) -> WorkerDispatchEnvelope:
             job.status = completed_state.status
             job.stage = completed_state.stage
             job.failure_payload = None
+            
+            log_audit_event(
+                action="JOB_COMPLETED",
+                resource_id=job_id,
+                details={"study_id": str(study.public_id), "type": "nifti_segmentation"}
+            )
+            
             session.add(
                 JobEvent(
                     job_id=job.id,

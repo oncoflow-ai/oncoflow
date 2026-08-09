@@ -10,6 +10,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from app.api.schemas.jobs import JobErrorPayload
+from app.core.audit import log_audit_event
 from app.core.config import get_settings
 from app.modules.artifacts.storage import resolve_artifact_location
 from app.modules.jobs.state_machine import transition_job
@@ -157,6 +158,12 @@ class JobService:
             )
             session.commit()
 
+            log_audit_event(
+                action="CREATE_STUDY",
+                resource_id=str(study.public_id),
+                details={"job_id": str(job.public_id), "study_type": "dicom"},
+            )
+
             dispatch = self._dispatch_worker(
                 job_id=str(job.public_id),
                 study_id=str(study.public_id),
@@ -278,6 +285,12 @@ class JobService:
             )
             session.commit()
 
+            log_audit_event(
+                action="CREATE_STUDY",
+                resource_id=str(study.public_id),
+                details={"job_id": str(job.public_id), "study_type": "nifti"},
+            )
+
             self._dispatch_nifti_worker(
                 job_id=str(job.public_id),
                 study_id=str(study.public_id),
@@ -342,6 +355,12 @@ class JobService:
                 )
             )
             session.commit()
+
+            log_audit_event(
+                action="JOB_FAILED",
+                resource_id=str(job.public_id),
+                details={"code": code, "message": message},
+            )
 
     def _dispatch_worker(self, *, job_id: str, study_id: str, extracted_relative_path: str) -> WorkerDispatchEnvelope:
         settings = get_settings()

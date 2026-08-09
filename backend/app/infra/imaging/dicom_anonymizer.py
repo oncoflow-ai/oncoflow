@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from uuid import UUID
 import pydicom
+from app.core.audit import log_audit_event
 
 def anonymize_dicom_series(record, output_dir: Path, patient_uuid: UUID) -> tuple[Path, ...]:
     """
@@ -66,5 +67,11 @@ def anonymize_dicom_series(record, output_dir: Path, patient_uuid: UUID) -> tupl
         except Exception as e:
             # If a file cannot be read or anonymized, we can log it and skip or raise
             raise RuntimeError(f"Failed to anonymize {file_path}: {e}")
+            
+    log_audit_event(
+        action="ANONYMIZE_DICOM",
+        resource_id=str(patient_uuid),
+        details={"file_count": len(anonymized_files), "series_uid": record.series_instance_uid}
+    )
             
     return tuple(anonymized_files)
