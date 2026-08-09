@@ -6,7 +6,7 @@ from typing import Literal
 
 from app.core.config import get_settings
 
-ArtifactRoot = Literal["raw", "derived"]
+ArtifactRoot = Literal["raw", "derived", "anonymized"]
 
 
 @dataclass(frozen=True)
@@ -22,6 +22,7 @@ def get_storage_roots() -> dict[ArtifactRoot, Path]:
     return {
         "raw": base / settings.storage_staging_dir,
         "derived": base / "derived",
+        "anonymized": base / "anonymized",
     }
 
 

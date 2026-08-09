@@ -17,6 +17,7 @@ class Study(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     public_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), unique=True, default=uuid4, index=True)
+    patient_public_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), default=uuid4, index=True)
     study_instance_uid: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     source_kind: Mapped[str] = mapped_column(String(64))
     source_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
