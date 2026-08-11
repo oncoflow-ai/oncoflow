@@ -104,6 +104,31 @@ def configure_logging() -> None:
         audit_logger.setLevel(logging.INFO)
 
 
+from app.infra.db.session import create_session_factory
+from app.infra.db.models import User
+from app.core.security import get_password_hash
+
+def bootstrap_users() -> None:
+    session_factory = create_session_factory()
+    demo_users = [
+        {"email": "admin@oncoflow.local", "name": "Maya Administrator", "password": "admin123", "role": "admin"},
+        {"email": "dr.cohen@ichilov.gov.il", "name": "Dr. D. Cohen", "password": "password", "role": "doctor"},
+        {"email": "radiology@oncoflow.local", "name": "Alex Rahman", "password": "password", "role": "radiologist"},
+        {"email": "clinician@oncoflow.local", "name": "Noa Clinical", "password": "password", "role": "clinician"},
+        {"email": "sarah.jenkins@example.test", "name": "Sarah Jenkins", "password": "patient123", "role": "patient"}
+    ]
+    with session_factory() as session:
+        for u in demo_users:
+            if not session.query(User).filter(User.email == u["email"]).first():
+                user = User(
+                    email=u["email"],
+                    name=u["name"],
+                    hashed_password=get_password_hash(u["password"]),
+                    role=u["role"]
+                )
+                session.add(user)
+        session.commit()
+
 def create_app() -> FastAPI:
     configure_logging()
     settings = get_settings()
@@ -116,6 +141,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     if hasattr(app, "add_event_handler"):
+        app.add_event_handler("startup", bootstrap_users)
         app.add_event_handler("shutdown", shutdown_background_workers)
     app.include_router(api_router, prefix=settings.api_prefix)
     return app
