@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   getJobStatus,
   getStudyResults,
+  submitDemoMriSegmentationJob,
   submitMriIngestionJob,
 } from '@/api/backendWorkspace'
 
@@ -45,6 +46,35 @@ describe('backend workspace api', () => {
     const formData = postMock.mock.calls[0][1] as FormData
     expect(formData.get('study_archive')).toBe(file)
     expect(formData.get('source_label')).toBe('local-demo')
+  })
+
+  it('submits demo MRI segmentation with multipart form data', async () => {
+    postMock.mockResolvedValue({
+      data: {
+        jobId: 'job-demo-1',
+        studyId: 'study-demo-1',
+        status: 'queued',
+        stage: 'staged',
+        submittedAt: '2026-04-12T11:24:03.996257Z',
+      },
+    })
+
+    const file = new File(['mri-body'], 'demo-scan.nii.gz', { type: 'application/gzip' })
+    const payload = await submitDemoMriSegmentationJob({
+      scanFile: file,
+      sourceLabel: 'class-demo',
+      acquiredAt: '2024-01-15',
+    })
+
+    expect(payload.jobId).toBe('job-demo-1')
+    expect(postMock).toHaveBeenCalledTimes(1)
+    expect(postMock.mock.calls[0][0]).toBe('/api/v1/jobs/demo-mri-segmentation')
+    expect(postMock.mock.calls[0][1]).toBeInstanceOf(FormData)
+
+    const formData = postMock.mock.calls[0][1] as FormData
+    expect(formData.get('scan_file')).toBe(file)
+    expect(formData.get('source_label')).toBe('class-demo')
+    expect(formData.get('acquired_at')).toBe('2024-01-15')
   })
 
   it('fetches job status from the live jobs endpoint', async () => {

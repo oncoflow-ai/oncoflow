@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import StatBlock from '@/components/shared/StatBlock'
 import VolumeChart from '@/components/scan/VolumeChart'
@@ -8,6 +8,7 @@ import AIInsightsPanel from '@/components/shared/AIInsightsPanel'
 import MriWorkspace from '@/components/shared/MriWorkspace'
 import ErrorBanner from '@/components/shared/ErrorBanner'
 import EmptyState from '@/components/shared/EmptyState'
+import BackendOperatorWorkspace from '@/components/dashboard/BackendOperatorWorkspace'
 import LongitudinalComparisonPanel from '@/components/dashboard/LongitudinalComparisonPanel'
 import { getPatient } from '@/api/patients'
 import { getScans } from '@/api/scans'
@@ -15,7 +16,7 @@ import { generateReport, getSummary, listReports } from '@/api/reports'
 import { formatDate, formatVolume, calcVolumeDeltaPct, cn } from '@/lib/utils'
 import { ScanLine } from 'lucide-react'
 
-type Tab = 'scans' | 'longitudinal' | 'reports'
+type Tab = 'scans' | 'longitudinal' | 'upload' | 'reports'
 
 function PatientTabButton({
   active,
@@ -43,8 +44,32 @@ function PatientTabButton({
 export default function DoctorPatientDashboardPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const queryClient = useQueryClient()
-  const [tab, setTab] = useState<Tab>('scans')
+
+  const tabParam = searchParams.get('tab') as Tab | null
+  const [tab, setTabState] = useState<Tab>(() => {
+    if (tabParam && ['scans', 'longitudinal', 'upload', 'reports'].includes(tabParam)) {
+      return tabParam
+    }
+    return 'scans'
+  })
+
+  useEffect(() => {
+    if (tabParam && ['scans', 'longitudinal', 'upload', 'reports'].includes(tabParam)) {
+      setTabState(tabParam)
+    }
+  }, [tabParam])
+
+  function setTab(newTab: Tab) {
+    setTabState(newTab)
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.set('tab', newTab)
+      return next
+    }, { replace: true })
+  }
+
   const [selectedScanId, setSelectedScanId] = useState<string | null>(null)
 
   const patientQuery = useQuery({
@@ -164,6 +189,7 @@ export default function DoctorPatientDashboardPage() {
       <div className="border-b border-border px-5 flex gap-1 bg-surface/40">
         <PatientTabButton active={tab === 'scans'} label="Scans & viewer" onClick={() => setTab('scans')} />
         <PatientTabButton active={tab === 'longitudinal'} label="Longitudinal" onClick={() => setTab('longitudinal')} />
+        <PatientTabButton active={tab === 'upload'} label="Upload MRI — pipeline" onClick={() => setTab('upload')} />
         <PatientTabButton active={tab === 'reports'} label="Reports" onClick={() => setTab('reports')} />
       </div>
 
@@ -250,18 +276,28 @@ export default function DoctorPatientDashboardPage() {
 
       {tab === 'longitudinal' && (
         <div className="flex-1 overflow-y-auto p-5">
-          {scans.length > 1 ? (
-            <LongitudinalComparisonPanel
-              restrictToStudyIds={patient?.linkedStudyIds}
-              scopeNote={scopeCopy}
-            />
-          ) : (
-            <EmptyState
-              icon={<ScanLine size={24} />}
-              title="Longitudinal analysis needs more than one scan"
-              description="When at least two scans exist for this patient, you can compare volume change and overlap metrics."
-            />
-          )}
+          <LongitudinalComparisonPanel
+            restrictToStudyIds={patient?.linkedStudyIds}
+            scopeNote={
+              patient?.linkedStudyIds?.length
+                ? undefined
+                : 'Showing all demo-backend studies. Configure linkedStudyIds on the mock patient to narrow comparisons.'
+            }
+          />
+        </div>
+      )}
+      {tab === 'upload' && (
+        <div className="flex-1 overflow-y-auto p-5">
+          <BackendOperatorWorkspace
+            headingEyebrow="RADIOLOGIST WORKSPACE"
+            headingTitle="Upload MRI — segmentation pipeline"
+            headingDescription="After ingestion completes, we attempt an automatic longitudinal comparison between the earliest and latest backend studies that have stored results (optionally filtered by this patient's linkedStudyIds when configured)."
+            prefilledSourceLabel={patient ? `${patient.id} · ${patient.name}` : ''}
+            onJobReachedTerminal={() => {
+              queryClient.invalidateQueries({ queryKey: ['backend-studies'] })
+              queryClient.invalidateQueries({ queryKey: ['scans', id] })
+            }}
+          />
         </div>
       )}
 

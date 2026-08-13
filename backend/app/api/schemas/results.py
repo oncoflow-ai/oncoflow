@@ -31,6 +31,7 @@ class StoredCaseResultResponse(CamelModel):
     lesions: list[StoredLesionResultResponse]
     needs_review: bool
     case_qc_reasons: list[str]
+    metadata: dict[str, object] | None = None
 
 
 class StudyListItemResponse(CamelModel):

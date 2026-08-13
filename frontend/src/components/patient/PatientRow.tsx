@@ -26,11 +26,10 @@ export default function PatientRow({
   const navigate = useNavigate()
 
   function go() {
-    if (rowMode === 'select') {
-      onActivate?.()
-      return
+    onActivate?.()
+    if (rowMode === 'navigate') {
+      navigate(`${navigateBase.replace(/\/$/, '')}/${patient.id}`)
     }
-    navigate(`${navigateBase.replace(/\/$/, '')}/${patient.id}`)
   }
 
   const volumeDelta = latestScan && previousScan
@@ -95,7 +94,24 @@ export default function PatientRow({
           <span className="text-[11px] text-text2 font-sans capitalize">{patient.status}</span>
         </div>
       </td>
-      <td className="px-3 py-3.5 text-text3 text-[13px]">›</td>
+      <td className="px-3 py-3.5 text-right">
+        {rowMode === 'select' ? (
+          <button
+            type="button"
+            aria-label={`Open chart page for ${patient.name}`}
+            onClick={e => {
+              e.stopPropagation()
+              navigate(`/doctor/patients/${patient.id}?tab=upload`)
+            }}
+            className="inline-flex items-center gap-1 font-mono text-[10px] font-bold text-teal hover:underline bg-teal/10 px-2 py-1 border border-teal/20 transition-colors"
+            title={`Open chart page for ${patient.name}`}
+          >
+            OPEN CHART →
+          </button>
+        ) : (
+          <span className="text-text3 text-[13px]">›</span>
+        )}
+      </td>
     </tr>
   )
 }

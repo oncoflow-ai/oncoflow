@@ -5,7 +5,7 @@ milestone_name: milestone
 status: ready
 stopped_at: Phase 01 complete
 last_updated: "2026-04-13T19:55:00Z"
-last_activity: 2026-04-13 -- Phase 03.1 code review and cleanup completed
+last_activity: 2026-07-13 -- Completed quick task 260713-eqe: Revise the OncoFlow poster using the midterm presentation, replace unclear baseline-follow-up art with real serial MRI segmentation imagery, update the presentation story, and re-export the PDF
 progress:
   total_phases: 5
   completed_phases: 1
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-11)
 Phase: 03.1 of 5 (Real nnU-Net Inference Integration) — complete
 Plan: 0 of unknown
 Status: Phase 03.1 cleanup complete; ready for the next phase
-Last activity: 2026-04-13 -- backend/frontend audit-fix completed
+Last activity: 2026-07-13 -- Completed quick task 260713-eqe: Revise the OncoFlow poster using the midterm presentation, replace unclear baseline-follow-up art with real serial MRI segmentation imagery, update the presentation story, and re-export the PDF
 
 Progress: [██░░░░░░░░] 20%
 
@@ -77,6 +77,15 @@ None yet.
 - Longitudinal support is intentionally limited to paired scans in v1 to protect scope.
 - The HLD introduces broader security, auth, and RAG expectations that should be treated as later-scope guidance unless Phase 1 planning explicitly pulls them earlier.
 - Local development currently uses an in-repo Alembic compatibility layer and placeholder NIfTI conversion fallback when external packages or `dcm2niix` are unavailable.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260712-u12 | Create a polished HTML project poster explaining OncoFlow and its MRI data flow, then export and verify a PDF | 2026-07-12 | ca6fefd6 | [260712-u12-create-a-polished-html-project-poster-ex](./quick/260712-u12-create-a-polished-html-project-poster-ex/) |
+| 260712-uc7 | Simplify the OncoFlow poster for distance readability by removing dense details, enlarging key text, and re-exporting the PDF | 2026-07-12 | f8cc9947 | [260712-uc7-simplify-the-oncoflow-poster-for-distanc](./quick/260712-uc7-simplify-the-oncoflow-poster-for-distanc/) |
+| 260712-uqu | Increase all OncoFlow poster font sizes for better distance readability and re-export the PDF | 2026-07-12 | 8e613287 | [260712-uqu-increase-all-oncoflow-poster-font-sizes-](./quick/260712-uqu-increase-all-oncoflow-poster-font-sizes-/) |
+| 260713-eqe | Revise the OncoFlow poster using the midterm presentation, replace unclear baseline-follow-up art with real serial MRI segmentation imagery, update the presentation story, and re-export the PDF | 2026-07-13 | e660bca2 | [260713-eqe-revise-the-oncoflow-poster-using-the-mid](./quick/260713-eqe-revise-the-oncoflow-poster-using-the-mid/) |
 
 ## Session Continuity
 

@@ -35,6 +35,8 @@ class Settings:
     inference_n4_bias_correction: bool = False
     inference_skull_strip: bool = False
     inference_isotropic_spacing_mm: float = 1.0
+    demo_job_delay_seconds: float = 20.0
+    demo_ground_truth_mask_path: str | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -96,6 +98,13 @@ class Settings:
             inference_isotropic_spacing_mm=get_float(
                 "OFLOW_ISOTROPIC_SPACING_MM",
                 cls.inference_isotropic_spacing_mm,
+            ),
+            demo_job_delay_seconds=get_float(
+                "ONCOFLOW_DEMO_JOB_DELAY_SECONDS",
+                cls.demo_job_delay_seconds,
+            ),
+            demo_ground_truth_mask_path=get_optional_str(
+                "ONCOFLOW_DEMO_GROUND_TRUTH_MASK_PATH"
             ),
         )
 
