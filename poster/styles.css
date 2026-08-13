@@ -55,11 +55,18 @@ h1 em { color: var(--cyan); font-style: normal; font-weight: 540; }
 .headline h2 strong { color: var(--cyan-soft); font-weight: 650; }
 .headline p { margin-top: 3mm; color: var(--muted); font-size: 4mm; line-height: 1.25; }
 
-.promise { display: grid; grid-template-columns: auto 1fr 17mm auto 1.45fr; align-items: center; gap: 4mm; padding: 4mm 6mm; background: rgba(10, 33, 48, .76); border-left: 1.2mm solid var(--orange); }
-.promise span { color: var(--orange); font-family: var(--condensed); font-size: 3.2mm; font-weight: 800; letter-spacing: .12em; }
-.promise p { font-size: 4.5mm; line-height: 1.15; font-weight: 600; }
-.promise i { height: .45mm; width: 100%; background: var(--orange); position: relative; }
-.promise i::after { content: ""; position: absolute; right: 0; top: -1.4mm; border-left: 2.6mm solid var(--orange); border-top: 1.6mm solid transparent; border-bottom: 1.6mm solid transparent; }
+.data-standard { display: grid; grid-template-rows: 5mm 1fr; gap: 1.2mm; padding: 2.5mm 6mm 2.8mm; background: rgba(10, 33, 48, .76); border-left: 1.2mm solid var(--orange); }
+.data-standard header { display: flex; align-items: baseline; gap: 4mm; }
+.data-standard header h2 { color: var(--orange); font-family: var(--condensed); font-size: 3.2mm; font-weight: 850; letter-spacing: .12em; }
+.data-standard header p { color: var(--muted); font-size: 3mm; line-height: 1; }
+.standard-metrics { display: grid; grid-template-columns: repeat(4, 1fr); align-items: center; }
+.standard-metrics article { min-width: 0; padding: 0 5mm; display: flex; flex-direction: column; justify-content: center; gap: .8mm; border-left: .4mm solid var(--line); }
+.standard-metrics article:first-child { padding-left: 0; border-left: 0; }
+.standard-metrics article:last-child { padding-right: 0; }
+.standard-metrics strong { color: var(--paper); font-size: 4.7mm; line-height: 1; letter-spacing: -.015em; white-space: nowrap; }
+.standard-metrics article:nth-child(3) strong { color: var(--cyan-soft); }
+.standard-metrics span { color: var(--cyan); font-family: var(--condensed); font-size: 3mm; font-weight: 750; line-height: 1; letter-spacing: .06em; white-space: nowrap; }
+.standard-metrics sup { font-size: .65em; vertical-align: super; line-height: 0; }
 
 .flow-section { padding: 5mm 6mm 5mm; background: rgba(10, 33, 48, .82); border: .3mm solid var(--line); }
 .section-title { display: flex; align-items: baseline; gap: 5mm; }

@@ -53,7 +53,7 @@ export const router = createBrowserRouter([
         children: [{ path: '/admin/users', element: <AdminUsersPage /> }],
       },
       {
-        element: <RoleRoute roles={['doctor', 'clinician']} />,
+        element: <RoleRoute roles={['doctor', 'clinician', 'radiologist']} />,
         children: [
           { path: '/doctor', element: <DoctorDashboardPage /> },
           { path: '/doctor/patients/:id', element: <DoctorPatientDashboardPage /> },

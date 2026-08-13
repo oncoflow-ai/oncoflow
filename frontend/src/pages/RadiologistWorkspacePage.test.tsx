@@ -88,6 +88,7 @@ function renderRadiologist() {
       <MemoryRouter initialEntries={['/radiologist']}>
         <Routes>
           <Route path="/radiologist" element={<RadiologistWorkspacePage />} />
+          <Route path="/doctor/patients/:id" element={<div>Patient Chart</div>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>
@@ -103,7 +104,7 @@ async function selectDicomFormat(user: ReturnType<typeof userEvent.setup>) {
 }
 
 async function selectClassDemoFormat(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: /Single Scan/i }))
+  await user.click(screen.getByRole('button', { name: /Class Demo Endpoint/i }))
 }
 
 describe('RadiologistWorkspacePage', () => {

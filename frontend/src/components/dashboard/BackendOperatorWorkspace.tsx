@@ -389,7 +389,7 @@ export default function BackendOperatorWorkspace({
                       : 'bg-surface text-text2 hover:text-text1'
                   )}
                 >
-                  Single Scan
+                  Class Demo Endpoint
                 </button>
                 <button
                   type="button"
