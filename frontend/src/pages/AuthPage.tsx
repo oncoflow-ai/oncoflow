@@ -109,8 +109,56 @@ export default function AuthPage() {
             >
               {loading ? 'Signing in…' : 'Continue →'}
             </button>
-            <div className="border border-border2 bg-surface px-3.5 py-3 text-[11px] text-text3 font-mono leading-relaxed">
-              Admin demo: admin@oncoflow.local / admin123
+            <div className="border border-border2 bg-surface p-3.5 space-y-2 text-[11px] font-mono">
+              <div className="text-text2 font-bold tracking-wider uppercase mb-1">
+                Quick Demo Logins:
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => { setEmail('admin@oncoflow.local'); setPassword('admin123'); }}
+                  className="px-2 py-1.5 bg-bg border border-border hover:border-teal text-left transition-colors"
+                >
+                  <div className="text-teal font-bold">Admin</div>
+                  <div className="text-text3 text-[10px] truncate">admin@oncoflow.local</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setEmail('radiology@oncoflow.local'); setPassword('password'); }}
+                  className="px-2 py-1.5 bg-bg border border-border hover:border-teal text-left transition-colors"
+                >
+                  <div className="text-teal font-bold">Radiologist</div>
+                  <div className="text-text3 text-[10px] truncate">radiology@oncoflow.local</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setEmail('dr.cohen@ichilov.gov.il'); setPassword('password'); }}
+                  className="px-2 py-1.5 bg-bg border border-border hover:border-teal text-left transition-colors"
+                >
+                  <div className="text-teal font-bold">Doctor</div>
+                  <div className="text-text3 text-[10px] truncate">dr.cohen@ichilov.gov.il</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setEmail('clinician@oncoflow.local'); setPassword('password'); }}
+                  className="px-2 py-1.5 bg-bg border border-border hover:border-teal text-left transition-colors"
+                >
+                  <div className="text-teal font-bold">Clinician</div>
+                  <div className="text-text3 text-[10px] truncate">clinician@oncoflow.local</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => { setEmail('sarah.jenkins@example.test'); setPassword('patient123'); }}
+                  className="px-2 py-1.5 bg-bg border border-border hover:border-teal text-left col-span-2 transition-colors"
+                >
+                  <div className="text-teal font-bold">Patient (Portal)</div>
+                  <div className="text-text3 text-[10px] truncate">sarah.jenkins@example.test (or ID PAT-1029)</div>
+                </button>
+              </div>
             </div>
             <hr className="border-border my-6" />
             <p className="text-[12px] text-text2 text-center font-sans">

@@ -8,6 +8,7 @@ import PatientDetailPage from '@/pages/PatientDetailPage'
 import DoctorDashboardPage from '@/pages/DoctorDashboardPage'
 import DoctorPatientDashboardPage from '@/pages/DoctorPatientDashboardPage'
 import RadiologistWorkspacePage from '@/pages/RadiologistWorkspacePage'
+import RadiologistPatientResultPage from '@/pages/RadiologistPatientResultPage'
 import PatientPortalPage from '@/pages/PatientPortalPage'
 import AdminUsersPage from '@/pages/AdminUsersPage'
 import RadiologyReviewPage from '@/pages/RadiologyReviewPage'
@@ -52,7 +53,7 @@ export const router = createBrowserRouter([
         children: [{ path: '/admin/users', element: <AdminUsersPage /> }],
       },
       {
-        element: <RoleRoute roles={['doctor', 'clinician']} />,
+        element: <RoleRoute roles={['doctor', 'clinician', 'radiologist']} />,
         children: [
           { path: '/doctor', element: <DoctorDashboardPage /> },
           { path: '/doctor/patients/:id', element: <DoctorPatientDashboardPage /> },
@@ -62,6 +63,7 @@ export const router = createBrowserRouter([
         element: <RoleRoute role="radiologist" />,
         children: [
           { path: '/radiologist', element: <RadiologistWorkspacePage /> },
+          { path: '/radiologist/patients/:patientId/results/:studyId', element: <RadiologistPatientResultPage /> },
           { path: '/review', element: <RadiologyReviewPage /> },
         ],
       },

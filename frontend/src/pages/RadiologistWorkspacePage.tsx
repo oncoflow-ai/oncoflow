@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import TopNav from '@/components/layout/TopNav'
 import PatientTable from '@/components/patient/PatientTable'
@@ -16,6 +17,7 @@ export default function RadiologistWorkspacePage() {
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null)
   const [autoMsg, setAutoMsg] = useState<string | null>(null)
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
 
   const patientsQuery = useQuery({
     queryKey: ['patients'],
@@ -77,12 +79,20 @@ export default function RadiologistWorkspacePage() {
     },
   })
 
-  function handleJobTerminal(payload: { studyId: string; status: 'completed' | 'failed' }) {
+  function handleJobTerminal(payload: {
+    studyId: string
+    status: 'completed' | 'failed'
+    mode: 'nifti' | 'dicom-zip' | 'class-demo'
+  }) {
     if (payload.status !== 'completed') {
       setAutoMsg(null)
       return
     }
     queryClient.invalidateQueries({ queryKey: ['backend-studies'] })
+    if (payload.mode === 'class-demo' && selectedPatient) {
+      navigate(`/radiologist/patients/${selectedPatient.id}/results/${payload.studyId}`)
+      return
+    }
     void autoCompareMutation.mutateAsync().catch(() => {})
   }
 

@@ -132,6 +132,35 @@ export async function submitNiftiSegmentationJob(
   }
 }
 
+export interface SubmitDemoMriSegmentationJobInput {
+  scanFile: File
+  sourceLabel?: string
+  acquiredAt?: string
+}
+
+export async function submitDemoMriSegmentationJob(
+  input: SubmitDemoMriSegmentationJobInput
+): Promise<BackendJobSubmission> {
+  const formData = new FormData()
+  formData.append('scan_file', input.scanFile)
+  if (input.sourceLabel?.trim()) {
+    formData.append('source_label', input.sourceLabel.trim())
+  }
+  if (input.acquiredAt?.trim()) {
+    formData.append('acquired_at', input.acquiredAt.trim())
+  }
+
+  try {
+    const response = await apiClient.post<BackendJobSubmission>(
+      '/api/v1/jobs/demo-mri-segmentation',
+      formData
+    )
+    return response.data
+  } catch (error) {
+    throw normalizeApiError(error, 'Failed to submit demo MRI segmentation job')
+  }
+}
+
 export async function listStudies(): Promise<BackendStudyListItem[]> {
   try {
     const response = await apiClient.get<BackendStudyListItem[]>('/api/v1/results/studies')

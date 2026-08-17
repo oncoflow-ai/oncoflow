@@ -33,4 +33,13 @@ describe('PatientTable', () => {
     renderTable(true)
     expect(screen.queryByText('Sarah Jenkins')).not.toBeInTheDocument()
   })
+
+  it('renders OPEN CHART button when rowMode is select', () => {
+    render(
+      <MemoryRouter>
+        <PatientTable patients={mockPatients} scansMap={mockScans} rowMode="select" />
+      </MemoryRouter>
+    )
+    expect(screen.getByRole('button', { name: /Open chart page for Sarah Jenkins/i })).toBeInTheDocument()
+  })
 })

@@ -56,6 +56,7 @@ class StoredCaseResult:
     lesions: tuple[StoredLesionResult, ...]
     needs_review: bool
     case_qc_reasons: tuple[str, ...] = ()
+    metadata: dict[str, object] | None = None
 
     def __post_init__(self) -> None:
         _require_text(self.study_id, field_name="study_id")

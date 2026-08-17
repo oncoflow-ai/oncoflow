@@ -123,6 +123,7 @@ export interface BackendCaseResult {
   lesions: BackendLesionResult[]
   needsReview: boolean
   caseQcReasons: string[]
+  metadata?: Record<string, unknown> | null
 }
 
 export interface BackendStudyListItem {
