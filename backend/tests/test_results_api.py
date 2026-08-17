@@ -5,9 +5,10 @@ from uuid import uuid4
 
 import pytest
 
-from app.infra.db.models import Artifact, StoredLesionResult, Study, StudyResult
+from app.infra.db.models import Artifact, StoredLesionResult, Study, StudyResult, User
 from app.infra.db.session import create_session_factory
 from app.modules.results.service import ResultNotFoundError, get_case_result_payload
+from app.api.deps import get_current_user
 
 
 @pytest.fixture(autouse=True)
@@ -15,6 +16,18 @@ def configure_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ONCOFLOW_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'results-api.sqlite3'}")
     monkeypatch.setenv("ONCOFLOW_STORAGE_ROOT", str(tmp_path / "storage"))
     monkeypatch.setenv("ONCOFLOW_STORAGE_STAGING_DIR", "raw")
+
+
+@pytest.fixture(autouse=True)
+def bypass_auth(client) -> None:
+    client.app.dependency_overrides[get_current_user] = lambda: User(
+        id="test-user",
+        email="test@oncoflow.local",
+        name="Test User",
+        role="admin"
+    )
+    yield
+    client.app.dependency_overrides.clear()
 
 
 def _seed_results():

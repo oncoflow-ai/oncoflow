@@ -109,6 +109,8 @@ def materialize_nifti_study_with_mask(
     session,
     study_public_id: UUID,
     mask_source_absolute_path: Path,
+    runner_metadata: dict | None = None,
+    result_metadata: dict | None = None,
 ) -> int:
     """Persist segmentation artifacts + StudyResult for a NIfTI demo upload."""
 
@@ -129,7 +131,7 @@ def materialize_nifti_study_with_mask(
         "spacing_mm": list(measurements.spacing_mm),
         "voxel_count": measurements.voxel_count,
     }
-    runner_meta = {
+    runner_meta = runner_metadata or {
         "model_id": "ground-truth-mask",
         "runner_version": "demo-1",
         "execution_backend": "passthrough",
@@ -181,16 +183,20 @@ def materialize_nifti_study_with_mask(
         },
     )
 
+    summary_metadata = {
+        "segmentation_run_id": segmentation_run_id,
+        "case_qc_reasons": [],
+        "lesion_count": 1,
+        "source": "nifti-demo",
+    }
+    if result_metadata:
+        summary_metadata.update(result_metadata)
+
     study_result = StudyResult(
         study_id=study.id,
         result_kind="single-scan",
         needs_review=False,
-        summary_metadata={
-            "segmentation_run_id": segmentation_run_id,
-            "case_qc_reasons": [],
-            "lesion_count": 1,
-            "source": "nifti-demo",
-        },
+        summary_metadata=summary_metadata,
     )
     session.add(study_result)
     session.flush()

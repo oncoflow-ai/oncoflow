@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import type { AppUser, AuthenticatedUser, UserRole } from '@/types'
+import { apiClient } from '@/api/client'
 
 export const demoUsers: AppUser[] = [
   {
@@ -109,16 +110,35 @@ export const useAuthStore = create<AuthState>()(
         if (!idOrEmail.trim() || !password.trim()) {
           throw new Error('User ID/email and password are required')
         }
-        await new Promise(res => setTimeout(res, 500))
-
-        const user = findUser(useAuthStore.getState().users, idOrEmail, role)
-        if (!user || (!role && user.password !== password)) {
+        
+        try {
+          const formData = new URLSearchParams()
+          formData.append('username', idOrEmail)
+          formData.append('password', password)
+          
+          const response = await apiClient.post('/api/v1/auth/login', formData, {
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded'
+            }
+          })
+          
+          const { access_token, user } = response.data
+          
+          sessionStorage.setItem('oncoflow_token', access_token)
+          
+          const authenticatedUser = {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            initials: initialsFromName(user.name)
+          }
+          
+          set({ user: authenticatedUser as AuthenticatedUser })
+          return authenticatedUser as AuthenticatedUser
+        } catch (error) {
           throw new Error('Invalid user credentials')
         }
-
-        const authenticatedUser = sanitizeUser(user)
-        set({ user: authenticatedUser })
-        return authenticatedUser
       },
 
       addUser: async ({ id, name, email, password, role, patientRecordId }) => {
@@ -163,6 +183,7 @@ export const useAuthStore = create<AuthState>()(
       },
 
       logout: () => {
+        sessionStorage.removeItem('oncoflow_token')
         set({ user: null })
       },
     }),

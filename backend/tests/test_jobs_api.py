@@ -17,6 +17,8 @@ from app.modules.jobs.worker_tasks import (
     WorkerDispatchEnvelope,
     execute_demo_mri_segmentation_job,
 )
+from app.api.deps import get_current_user
+from app.infra.db.models import User
 
 
 def _zip_bytes(files: dict[str, bytes]) -> bytes:
@@ -32,6 +34,18 @@ def configure_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ONCOFLOW_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'jobs.sqlite3'}")
     monkeypatch.setenv("ONCOFLOW_STORAGE_ROOT", str(tmp_path / "storage"))
     monkeypatch.setenv("ONCOFLOW_STORAGE_STAGING_DIR", "raw")
+
+
+@pytest.fixture(autouse=True)
+def bypass_auth(client) -> None:
+    client.app.dependency_overrides[get_current_user] = lambda: User(
+        id="test-user",
+        email="test@oncoflow.local",
+        name="Test User",
+        role="admin"
+    )
+    yield
+    client.app.dependency_overrides.clear()
 
 
 def test_post_mri_ingestion_stages_archive_and_returns_queued_job(client) -> None:
@@ -108,6 +122,7 @@ def test_submission_dispatches_identifiers_not_raw_bytes(monkeypatch: pytest.Mon
 
 def test_threaded_execution_mode_starts_background_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ONCOFLOW_JOB_EXECUTION_MODE", "threaded")
+    get_settings.cache_clear()
     service = JobService()
     captured: dict[str, str] = {}
 

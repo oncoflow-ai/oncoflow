@@ -30,7 +30,9 @@ class AppClient:
 
 
 @pytest.fixture(autouse=True)
-def clear_settings_cache() -> Iterator[None]:
+def clear_settings_cache(monkeypatch) -> Iterator[None]:
+    monkeypatch.setenv("ONCOFLOW_DATABASE_URL", "sqlite:///:memory:")
+    monkeypatch.setenv("ONCOFLOW_ENVIRONMENT", "test")
     get_settings.cache_clear()
     get_engine.cache_clear()
     yield

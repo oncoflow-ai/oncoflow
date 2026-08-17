@@ -35,6 +35,8 @@ class Settings:
     inference_n4_bias_correction: bool = False
     inference_skull_strip: bool = False
     inference_isotropic_spacing_mm: float = 1.0
+    jwt_secret_key: str = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
+    jwt_algorithm: str = "HS256"
     demo_job_delay_seconds: float = 20.0
     demo_ground_truth_mask_path: str | None = None
 
@@ -99,6 +101,8 @@ class Settings:
                 "OFLOW_ISOTROPIC_SPACING_MM",
                 cls.inference_isotropic_spacing_mm,
             ),
+            jwt_secret_key=get_str("ONCOFLOW_JWT_SECRET_KEY", cls.jwt_secret_key),
+            jwt_algorithm=get_str("ONCOFLOW_JWT_ALGORITHM", cls.jwt_algorithm),
             demo_job_delay_seconds=get_float(
                 "ONCOFLOW_DEMO_JOB_DELAY_SECONDS",
                 cls.demo_job_delay_seconds,
