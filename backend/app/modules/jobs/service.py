@@ -322,7 +322,7 @@ class JobService:
             safe_filename = "demo-mri-upload.bin"
 
         study_public_id = uuid4()
-        submitted_at = datetime.now(UTC)
+        submitted_at = datetime.now(timezone.utc)
 
         with self._session_factory() as session:
             study = Study(
