@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import (
     get_current_user,
-    get_optional_current_user,
     get_session,
     verify_patient_access,
 )
@@ -123,12 +122,12 @@ def _build_patient_response(patient: Patient, session: Session) -> PatientRespon
 def list_patients(
     query: str | None = Query(None, description="Search term for pseudonym or diagnosis"),
     session: Session = Depends(get_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> list[PatientResponse]:
     q = session.query(Patient)
 
     # If user is a clinician/doctor (not admin), scope to assigned patients
-    if current_user is not None and current_user.role != "admin":
+    if current_user.role != "admin":
         assigned_patient_ids = (
             session.query(Assignment.patient_id)
             .filter(Assignment.doctor_id == current_user.id)
@@ -158,7 +157,7 @@ def list_patients(
 def create_patient(
     payload: PatientCreate,
     session: Session = Depends(get_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> PatientResponse:
     pseudonym = payload.pseudonym or payload.name
     if not pseudonym:
@@ -192,7 +191,7 @@ def create_patient(
             doctor_to_assign = _find_user(payload.assigned_physician_id, session)
         except HTTPException:
             pass
-    elif current_user is not None and current_user.role in {"doctor", "clinician", "radiologist"}:
+    elif current_user.role in {"doctor", "clinician", "radiologist"}:
         doctor_to_assign = current_user
 
     if doctor_to_assign:
@@ -219,7 +218,7 @@ def create_patient(
 def get_patient(
     patient_id: str,
     session: Session = Depends(get_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> PatientDetailResponse:
     patient = _find_patient(patient_id, session)
     verify_patient_access(patient, current_user, session)
@@ -281,7 +280,7 @@ def update_patient(
     patient_id: str,
     payload: PatientUpdate,
     session: Session = Depends(get_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> PatientResponse:
     patient = _find_patient(patient_id, session)
     verify_patient_access(patient, current_user, session)
@@ -390,7 +389,7 @@ def remove_doctor_assignment(
 def get_patient_studies(
     patient_id: str,
     session: Session = Depends(get_session),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> list[PatientStudyItemResponse]:
     patient = _find_patient(patient_id, session)
     verify_patient_access(patient, current_user, session)

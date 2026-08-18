@@ -67,6 +67,74 @@ def auth_tokens(app_and_client):
     }
 
 
+@pytest.mark.parametrize(
+    ("method", "path", "kwargs"),
+    [
+        ("get", "/api/v1/patients", {}),
+        ("post", "/api/v1/patients", {"json": {"name": "PAT-ANON-CREATE"}}),
+        ("get", "/api/v1/patients/missing-patient", {}),
+        (
+            "patch",
+            "/api/v1/patients/missing-patient",
+            {"json": {"status": "review"}},
+        ),
+        ("get", "/api/v1/patients/missing-patient/studies", {}),
+        (
+            "post",
+            "/api/v1/patients/missing-patient/assignments",
+            {"json": {"doctorId": "missing-doctor"}},
+        ),
+        (
+            "delete",
+            "/api/v1/patients/missing-patient/assignments/missing-doctor",
+            {},
+        ),
+    ],
+)
+def test_patient_routes_require_authentication(
+    app_and_client,
+    method: str,
+    path: str,
+    kwargs: dict,
+) -> None:
+    _, client = app_and_client
+
+    response = client.request(method, path, **kwargs)
+
+    assert response.status_code == 401
+    with create_session_factory()() as session:
+        assert session.query(Patient).count() == 0
+        assert session.query(Assignment).count() == 0
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "kwargs"),
+    [
+        ("get", "/api/v1/patients", {}),
+        ("post", "/api/v1/patients", {"json": {"name": "PAT-BAD-TOKEN"}}),
+    ],
+)
+def test_patient_routes_reject_invalid_tokens_without_mutation(
+    app_and_client,
+    method: str,
+    path: str,
+    kwargs: dict,
+) -> None:
+    _, client = app_and_client
+
+    response = client.request(
+        method,
+        path,
+        headers={"Authorization": "Bearer not-a-valid-jwt"},
+        **kwargs,
+    )
+
+    assert response.status_code == 401
+    with create_session_factory()() as session:
+        assert session.query(Patient).count() == 0
+        assert session.query(Assignment).count() == 0
+
+
 def test_create_and_list_patients(app_and_client, auth_tokens):
     _, client = app_and_client
     headers_dr_a = {"Authorization": f"Bearer {auth_tokens['dr_a']['token']}"}

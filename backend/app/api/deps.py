@@ -77,12 +77,10 @@ def get_optional_current_user(
 
 def verify_patient_access(
     patient: Patient,
-    user: User | None,
+    user: User,
     session: Session,
 ) -> None:
     """Verifies that the user has permission to access the patient record."""
-    if user is None:
-        return  # Allow access in unauthenticated / demo mode
     if user.role == "admin":
         return  # Admin has global access
     
@@ -96,4 +94,3 @@ def verify_patient_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this patient record",
         )
-
