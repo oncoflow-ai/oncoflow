@@ -17,6 +17,10 @@ down_revision: Union[str, None] = 'f61c96c5c275'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+SQLITE_BATCH_NAMING_CONVENTION = {
+    "fk": "fk_%(table_name)s_%(column_0_name)s",
+}
+
 
 def upgrade() -> None:
     # 1. Create patients table
@@ -54,15 +58,23 @@ def upgrade() -> None:
     op.create_index(op.f('ix_assignments_patient_id'), 'assignments', ['patient_id'], unique=False)
 
     # 3. Add patient_id to studies
-    op.add_column('studies', sa.Column('patient_id', sa.Integer(), nullable=True))
-    op.create_foreign_key('fk_studies_patient_id', 'studies', 'patients', ['patient_id'], ['id'])
-    op.create_index(op.f('ix_studies_patient_id'), 'studies', ['patient_id'], unique=False)
+    with op.batch_alter_table(
+        'studies', naming_convention=SQLITE_BATCH_NAMING_CONVENTION
+    ) as batch_op:
+        batch_op.add_column(sa.Column('patient_id', sa.Integer(), nullable=True))
+        batch_op.create_foreign_key(
+            'fk_studies_patient_id', 'patients', ['patient_id'], ['id']
+        )
+        batch_op.create_index(op.f('ix_studies_patient_id'), ['patient_id'], unique=False)
 
 
 def downgrade() -> None:
-    op.drop_constraint('fk_studies_patient_id', 'studies', type_='foreignkey')
-    op.drop_index(op.f('ix_studies_patient_id'), table_name='studies')
-    op.drop_column('studies', 'patient_id')
+    with op.batch_alter_table(
+        'studies', naming_convention=SQLITE_BATCH_NAMING_CONVENTION
+    ) as batch_op:
+        batch_op.drop_constraint('fk_studies_patient_id', type_='foreignkey')
+        batch_op.drop_index(op.f('ix_studies_patient_id'))
+        batch_op.drop_column('patient_id')
 
     op.drop_index(op.f('ix_assignments_patient_id'), table_name='assignments')
     op.drop_index(op.f('ix_assignments_doctor_id'), table_name='assignments')
