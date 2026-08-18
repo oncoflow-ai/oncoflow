@@ -4,7 +4,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
-from app.api.deps import get_optional_current_user
+from app.api.deps import get_current_user
 from app.api.schemas.jobs import (
     JobStatusResponse,
     JobSubmissionResponse,
@@ -30,7 +30,7 @@ async def submit_mri_ingestion_job(
     study_archive: UploadFile = File(...),
     source_label: str | None = Form(default=None),
     patient_id: str | None = Form(default=None),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> JobSubmissionResponse:
     try:
         submission = await JobService().submit_mri_study(
@@ -64,7 +64,7 @@ async def submit_nifti_segmentation_job(
     source_label: str | None = Form(default=None),
     acquired_at: str | None = Form(default=None),
     patient_id: str | None = Form(default=None),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> JobSubmissionResponse:
     parsed_date: date | None = None
     if acquired_at:
@@ -115,7 +115,7 @@ async def submit_demo_mri_segmentation_job(
     source_label: str | None = Form(default=None),
     acquired_at: str | None = Form(default=None),
     patient_id: str | None = Form(default=None),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> JobSubmissionResponse:
     parsed_date: date | None = None
     if acquired_at:

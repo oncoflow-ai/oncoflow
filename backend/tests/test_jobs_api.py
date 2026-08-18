@@ -9,7 +9,7 @@ from uuid import UUID
 import pytest
 
 from app.core.config import get_settings
-from app.infra.db.models import Artifact, Job
+from app.infra.db.models import Artifact, Assignment, Job, Patient, Study
 from app.infra.db.session import create_session_factory
 from app.modules.jobs.service import JobService
 from app.modules.jobs.state_machine import transition_job
@@ -46,6 +46,130 @@ def bypass_auth(client) -> None:
     )
     yield
     client.app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "files"),
+    [
+        (
+            "/api/v1/jobs/mri-ingestion",
+            {"study_archive": ("exam.zip", _zip_bytes({"exam/file.dcm": b"dicom"}), "application/zip")},
+        ),
+        (
+            "/api/v1/jobs/nifti-segmentation",
+            {"scan_file": ("scan.nii.gz", b"nifti-bytes", "application/gzip")},
+        ),
+        (
+            "/api/v1/jobs/demo-mri-segmentation",
+            {"scan_file": ("demo.nii.gz", b"demo-bytes", "application/gzip")},
+        ),
+    ],
+)
+def test_ingestion_routes_require_authentication(client, endpoint: str, files: dict) -> None:
+    client.app.dependency_overrides.clear()
+
+    response = client.post(endpoint, files=files)
+
+    assert response.status_code == 401
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "files"),
+    [
+        (
+            "/api/v1/jobs/mri-ingestion",
+            {"study_archive": ("exam.zip", _zip_bytes({"exam/file.dcm": b"dicom"}), "application/zip")},
+        ),
+        (
+            "/api/v1/jobs/nifti-segmentation",
+            {"scan_file": ("scan.nii.gz", b"nifti-bytes", "application/gzip")},
+        ),
+        (
+            "/api/v1/jobs/demo-mri-segmentation",
+            {"scan_file": ("demo.nii.gz", b"demo-bytes", "application/gzip")},
+        ),
+    ],
+)
+def test_ingestion_rejects_inaccessible_existing_patient_without_db_side_effects(
+    client,
+    endpoint: str,
+    files: dict,
+) -> None:
+    assert client.get("/api/v1/health").status_code == 200
+    session_factory = create_session_factory()
+    with session_factory() as session:
+        clinician = User(
+            email="unassigned-clinician@test.local",
+            name="Unassigned Clinician",
+            hashed_password="hash",
+            role="clinician",
+        )
+        patient = Patient(pseudonym="PAT-INGESTION-RESTRICTED", status="active")
+        session.add_all([clinician, patient])
+        session.commit()
+        patient_id = str(patient.public_id)
+        baseline_counts = {
+            "patients": session.query(Patient).count(),
+            "assignments": session.query(Assignment).count(),
+            "studies": session.query(Study).count(),
+            "jobs": session.query(Job).count(),
+        }
+
+    client.app.dependency_overrides[get_current_user] = lambda: clinician
+    response = client.post(endpoint, files=files, data={"patient_id": patient_id})
+
+    assert response.status_code == 403
+    with session_factory() as session:
+        assert session.query(Patient).count() == baseline_counts["patients"]
+        assert session.query(Assignment).count() == baseline_counts["assignments"]
+        assert session.query(Study).count() == baseline_counts["studies"]
+        assert session.query(Job).count() == baseline_counts["jobs"]
+
+
+def test_ingestion_allows_assigned_clinician_for_existing_patient(client) -> None:
+    assert client.get("/api/v1/health").status_code == 200
+    session_factory = create_session_factory()
+    with session_factory() as session:
+        clinician = User(
+            email="assigned-clinician@test.local",
+            name="Assigned Clinician",
+            hashed_password="hash",
+            role="clinician",
+        )
+        patient = Patient(pseudonym="PAT-INGESTION-ASSIGNED", status="active")
+        session.add_all([clinician, patient])
+        session.flush()
+        session.add(Assignment(doctor_id=clinician.id, patient_id=patient.id))
+        session.commit()
+        patient_id = str(patient.public_id)
+
+    client.app.dependency_overrides[get_current_user] = lambda: clinician
+    response = client.post(
+        "/api/v1/jobs/demo-mri-segmentation",
+        files={"scan_file": ("demo.nii.gz", b"demo-bytes", "application/gzip")},
+        data={"patient_id": patient_id},
+    )
+
+    assert response.status_code == 201
+    with session_factory() as session:
+        assert session.query(Assignment).filter(Assignment.patient_id == patient.id).count() == 1
+
+
+def test_ingestion_rejects_unknown_explicit_patient_without_creating_one(client) -> None:
+    assert client.get("/api/v1/health").status_code == 200
+    session_factory = create_session_factory()
+    with session_factory() as session:
+        baseline_patient_count = session.query(Patient).count()
+
+    response = client.post(
+        "/api/v1/jobs/demo-mri-segmentation",
+        files={"scan_file": ("demo.nii.gz", b"demo-bytes", "application/gzip")},
+        data={"patient_id": "PAT-DOES-NOT-EXIST"},
+    )
+
+    assert response.status_code == 404
+    with session_factory() as session:
+        assert session.query(Patient).count() == baseline_patient_count
 
 
 def test_post_mri_ingestion_stages_archive_and_returns_queued_job(client) -> None:

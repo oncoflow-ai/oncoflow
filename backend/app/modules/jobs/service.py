@@ -85,33 +85,42 @@ def _resolve_or_create_patient(
             pass
         if not patient:
             patient = session.query(Patient).filter(Patient.pseudonym == patient_id_input).first()
+        if patient is None:
+            raise SubmissionValidationError(404, f"Patient {patient_id_input} not found")
 
-    if not patient:
-        new_pseudonym = f"PAT-{uuid4().hex[:6].upper()}"
-        patient = Patient(
-            public_id=uuid4(),
-            pseudonym=new_pseudonym,
-            status="active",
-        )
-        session.add(patient)
-        session.flush()
+        if current_user is None:
+            raise SubmissionValidationError(403, "You do not have access to this patient record")
+        if current_user.role != "admin":
+            existing_assign = (
+                session.query(Assignment)
+                .filter(
+                    Assignment.doctor_id == current_user.id,
+                    Assignment.patient_id == patient.id,
+                )
+                .first()
+            )
+            if existing_assign is None:
+                raise SubmissionValidationError(
+                    403, "You do not have access to this patient record"
+                )
+        return patient
+
+    patient = Patient(
+        public_id=uuid4(),
+        pseudonym=f"PAT-{uuid4().hex[:6].upper()}",
+        status="active",
+    )
+    session.add(patient)
+    session.flush()
 
     if current_user is not None and current_user.role in {"doctor", "clinician", "radiologist"}:
-        existing_assign = (
-            session.query(Assignment)
-            .filter(
-                Assignment.doctor_id == current_user.id,
-                Assignment.patient_id == patient.id,
-            )
-            .first()
-        )
-        if not existing_assign:
-            assign = Assignment(
+        session.add(
+            Assignment(
                 doctor_id=current_user.id,
                 patient_id=patient.id,
             )
-            session.add(assign)
-            session.flush()
+        )
+        session.flush()
 
     return patient
 
