@@ -26,6 +26,7 @@ from app.core.audit import log_audit_event
 from app.infra.db.models import Assignment, Patient, Study, User
 
 router = APIRouter(prefix="/patients", tags=["patients"])
+ASSIGNABLE_PATIENT_ROLES = {"doctor", "clinician", "radiologist"}
 
 
 def _find_patient(patient_id: str, session: Session) -> Patient:
@@ -319,8 +320,19 @@ def assign_doctor_to_patient(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> AssignedDoctorResponse:
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can manage patient assignments",
+        )
+
     patient = _find_patient(patient_id, session)
     doctor = _find_user(payload.doctor_id, session)
+    if doctor.role not in ASSIGNABLE_PATIENT_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Patient assignments require a doctor, clinician, or radiologist",
+        )
 
     # Check if assignment already exists
     existing = (
@@ -367,6 +379,12 @@ def remove_doctor_assignment(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> None:
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can manage patient assignments",
+        )
+
     patient = _find_patient(patient_id, session)
     doctor = _find_user(doctor_id, session)
 
