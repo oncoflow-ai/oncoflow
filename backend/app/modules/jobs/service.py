@@ -23,7 +23,7 @@ from app.modules.jobs.worker_tasks import (
     forget_worker_thread,
     register_worker_thread,
 )
-from app.infra.db.models import Artifact, Job, JobEvent, Study
+from app.infra.db.models import Artifact, Assignment, Job, JobEvent, Patient, Study, User
 from app.infra.db.session import create_session_factory
 
 logger = logging.getLogger(__name__)
@@ -71,6 +71,51 @@ class JobStatusResult(JobSubmissionResult):
     error: JobErrorPayload | None = None
 
 
+def _resolve_or_create_patient(
+    session,
+    patient_id_input: str | None = None,
+    current_user: User | None = None,
+) -> Patient:
+    patient: Patient | None = None
+    if patient_id_input:
+        try:
+            puuid = UUID(patient_id_input)
+            patient = session.query(Patient).filter(Patient.public_id == puuid).first()
+        except ValueError:
+            pass
+        if not patient:
+            patient = session.query(Patient).filter(Patient.pseudonym == patient_id_input).first()
+
+    if not patient:
+        new_pseudonym = f"PAT-{uuid4().hex[:6].upper()}"
+        patient = Patient(
+            public_id=uuid4(),
+            pseudonym=new_pseudonym,
+            status="active",
+        )
+        session.add(patient)
+        session.flush()
+
+    if current_user is not None and current_user.role in {"doctor", "clinician", "radiologist"}:
+        existing_assign = (
+            session.query(Assignment)
+            .filter(
+                Assignment.doctor_id == current_user.id,
+                Assignment.patient_id == patient.id,
+            )
+            .first()
+        )
+        if not existing_assign:
+            assign = Assignment(
+                doctor_id=current_user.id,
+                patient_id=patient.id,
+            )
+            session.add(assign)
+            session.flush()
+
+    return patient
+
+
 class JobService:
     def __init__(self) -> None:
         self._session_factory = create_session_factory()
@@ -82,6 +127,8 @@ class JobService:
         content_type: str | None,
         archive_bytes: bytes,
         source_label: str | None,
+        patient_id: str | None = None,
+        current_user: User | None = None,
     ) -> JobSubmissionResult:
         if not archive_bytes:
             raise SubmissionValidationError(400, "study_archive must not be empty")
@@ -104,8 +151,13 @@ class JobService:
         submitted_at = datetime.now(timezone.utc)
 
         with self._session_factory() as session:
+            patient = _resolve_or_create_patient(
+                session, patient_id_input=patient_id, current_user=current_user
+            )
             study = Study(
                 public_id=study_public_id,
+                patient_id=patient.id,
+                patient_public_id=patient.public_id,
                 study_instance_uid=f"staged-{study_public_id}",
                 source_kind="dicom-study",
                 source_metadata={
@@ -191,6 +243,8 @@ class JobService:
         mask_bytes: bytes | None,
         source_label: str | None,
         acquired_at: date | None,
+        patient_id: str | None = None,
+        current_user: User | None = None,
     ) -> JobSubmissionResult:
         if not scan_bytes:
             raise SubmissionValidationError(400, "scan_file must not be empty")
@@ -227,8 +281,13 @@ class JobService:
         submitted_at = datetime.now(timezone.utc)
 
         with self._session_factory() as session:
+            patient = _resolve_or_create_patient(
+                session, patient_id_input=patient_id, current_user=current_user
+            )
             study = Study(
                 public_id=study_public_id,
+                patient_id=patient.id,
+                patient_public_id=patient.public_id,
                 study_instance_uid=f"nifti-{study_public_id}",
                 source_kind="nifti-upload",
                 source_metadata={
@@ -313,6 +372,8 @@ class JobService:
         content_type: str | None,
         source_label: str | None,
         acquired_at: date | None,
+        patient_id: str | None = None,
+        current_user: User | None = None,
     ) -> JobSubmissionResult:
         if not scan_bytes:
             raise SubmissionValidationError(400, "scan_file must not be empty")
@@ -325,8 +386,13 @@ class JobService:
         submitted_at = datetime.now(timezone.utc)
 
         with self._session_factory() as session:
+            patient = _resolve_or_create_patient(
+                session, patient_id_input=patient_id, current_user=current_user
+            )
             study = Study(
                 public_id=study_public_id,
+                patient_id=patient.id,
+                patient_public_id=patient.public_id,
                 study_instance_uid=f"demo-{study_public_id}",
                 source_kind="demo-mri-upload",
                 source_metadata={
@@ -342,6 +408,7 @@ class JobService:
             )
             session.add(study)
             session.flush()
+
 
             job = Job(
                 study_id=study.id,

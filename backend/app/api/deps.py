@@ -7,15 +7,18 @@ from typing import Generator
 
 from app.core.config import get_settings
 from app.infra.db.session import create_session_factory
-from app.infra.db.models import User
+from app.infra.db.models import User, Patient, Assignment, Study
 from app.core.audit import current_actor
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+optional_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+
 
 def get_session() -> Generator[Session, None, None]:
     factory = create_session_factory()
     with factory() as session:
         yield session
+
 
 def get_current_user(
     token: str = Depends(oauth2_scheme),
@@ -49,3 +52,48 @@ def get_current_user(
     current_actor.set(str(user.public_id))
     
     return user
+
+
+def get_optional_current_user(
+    token: str | None = Depends(optional_oauth2_scheme),
+    session: Session = Depends(get_session)
+) -> User | None:
+    if not token:
+        return None
+    settings = get_settings()
+    try:
+        payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
+        user_id_str = payload.get("sub")
+        if not user_id_str:
+            return None
+        user_uuid = UUID(user_id_str)
+        user = session.query(User).filter(User.public_id == user_uuid).first()
+        if user:
+            current_actor.set(str(user.public_id))
+        return user
+    except Exception:
+        return None
+
+
+def verify_patient_access(
+    patient: Patient,
+    user: User | None,
+    session: Session,
+) -> None:
+    """Verifies that the user has permission to access the patient record."""
+    if user is None:
+        return  # Allow access in unauthenticated / demo mode
+    if user.role == "admin":
+        return  # Admin has global access
+    
+    # Check if doctor/clinician is assigned
+    assignment = session.query(Assignment).filter(
+        Assignment.doctor_id == user.id,
+        Assignment.patient_id == patient.id,
+    ).first()
+    if not assignment:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this patient record",
+        )
+

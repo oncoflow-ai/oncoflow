@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
+from app.api.deps import get_optional_current_user
 from app.api.schemas.jobs import (
     JobStatusResponse,
     JobSubmissionResponse,
     LongitudinalComparisonRequest,
 )
 from app.api.schemas.results import ComparisonResponse
+from app.infra.db.models import User
 from app.modules.jobs.service import JobService, SubmissionValidationError
 from app.modules.results.comparisons import (
     ComparisonError,
@@ -27,6 +29,8 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 async def submit_mri_ingestion_job(
     study_archive: UploadFile = File(...),
     source_label: str | None = Form(default=None),
+    patient_id: str | None = Form(default=None),
+    current_user: User | None = Depends(get_optional_current_user),
 ) -> JobSubmissionResponse:
     try:
         submission = await JobService().submit_mri_study(
@@ -34,6 +38,8 @@ async def submit_mri_ingestion_job(
             content_type=study_archive.content_type,
             archive_bytes=await study_archive.read(),
             source_label=source_label,
+            patient_id=patient_id,
+            current_user=current_user,
         )
     except SubmissionValidationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
@@ -57,6 +63,8 @@ async def submit_nifti_segmentation_job(
     mask_file: UploadFile | None = File(default=None),
     source_label: str | None = Form(default=None),
     acquired_at: str | None = Form(default=None),
+    patient_id: str | None = Form(default=None),
+    current_user: User | None = Depends(get_optional_current_user),
 ) -> JobSubmissionResponse:
     parsed_date: date | None = None
     if acquired_at:
@@ -82,6 +90,8 @@ async def submit_nifti_segmentation_job(
             mask_bytes=mask_bytes,
             source_label=source_label,
             acquired_at=parsed_date,
+            patient_id=patient_id,
+            current_user=current_user,
         )
     except SubmissionValidationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
@@ -104,6 +114,8 @@ async def submit_demo_mri_segmentation_job(
     scan_file: UploadFile = File(...),
     source_label: str | None = Form(default=None),
     acquired_at: str | None = Form(default=None),
+    patient_id: str | None = Form(default=None),
+    current_user: User | None = Depends(get_optional_current_user),
 ) -> JobSubmissionResponse:
     parsed_date: date | None = None
     if acquired_at:
@@ -122,6 +134,8 @@ async def submit_demo_mri_segmentation_job(
             content_type=scan_file.content_type,
             source_label=source_label,
             acquired_at=parsed_date,
+            patient_id=patient_id,
+            current_user=current_user,
         )
     except SubmissionValidationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
@@ -133,6 +147,7 @@ async def submit_demo_mri_segmentation_job(
         stage=submission.stage,
         submitted_at=submission.submitted_at,
     )
+
 
 
 @router.post(
