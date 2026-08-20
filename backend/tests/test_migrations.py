@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+from datetime import datetime, timezone
+from uuid import UUID, uuid4
 
 import sqlalchemy as sa
 
@@ -73,3 +75,81 @@ def test_all_migration_revision_ids_fit_alembic_version_column() -> None:
     script = ScriptDirectory.from_config(config)
 
     assert all(len(revision.revision) <= 32 for revision in script.walk_revisions())
+
+
+def test_patient_migration_backfills_populated_studies(tmp_path: Path) -> None:
+    database_path = tmp_path / "populated-migration.sqlite3"
+    config = _alembic_config(database_path)
+    command.upgrade(config, "f61c96c5c275")
+
+    engine = sa.create_engine(f"sqlite:///{database_path}")
+    metadata = sa.MetaData()
+    studies = sa.Table("studies", metadata, autoload_with=engine)
+    shared_patient_id = uuid4()
+    other_patient_id = uuid4()
+    now = datetime.now(timezone.utc)
+    with engine.begin() as connection:
+        connection.execute(
+            studies.insert(),
+            [
+                {
+                    "public_id": uuid4().hex,
+                    "patient_public_id": shared_patient_id.hex,
+                    "study_instance_uid": "legacy-study-1",
+                    "source_kind": "nifti",
+                    "source_metadata": {},
+                    "staging_status": "staged",
+                    "acquired_at": None,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+                {
+                    "public_id": uuid4().hex,
+                    "patient_public_id": shared_patient_id.hex,
+                    "study_instance_uid": "legacy-study-2",
+                    "source_kind": "nifti",
+                    "source_metadata": {},
+                    "staging_status": "staged",
+                    "acquired_at": None,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+                {
+                    "public_id": uuid4().hex,
+                    "patient_public_id": other_patient_id.hex,
+                    "study_instance_uid": "legacy-study-3",
+                    "source_kind": "dicom",
+                    "source_metadata": {},
+                    "staging_status": "staged",
+                    "acquired_at": None,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            ],
+        )
+    engine.dispose()
+
+    command.upgrade(config, "a1b2c3d4e5f6")
+
+    upgraded_engine = sa.create_engine(f"sqlite:///{database_path}")
+    upgraded_metadata = sa.MetaData()
+    upgraded_studies = sa.Table(
+        "studies", upgraded_metadata, autoload_with=upgraded_engine
+    )
+    patients = sa.Table("patients", upgraded_metadata, autoload_with=upgraded_engine)
+    with upgraded_engine.connect() as connection:
+        patient_rows = connection.execute(sa.select(patients)).mappings().all()
+        study_rows = connection.execute(
+            sa.select(upgraded_studies).order_by(upgraded_studies.c.study_instance_uid)
+        ).mappings().all()
+
+    assert len(patient_rows) == 2
+    patient_by_public_id = {
+        str(UUID(str(row["public_id"]))): row for row in patient_rows
+    }
+    assert set(patient_by_public_id) == {str(shared_patient_id), str(other_patient_id)}
+    assert all(row["pseudonym"].startswith("MIG-") for row in patient_rows)
+    assert all(row["patient_id"] is not None for row in study_rows)
+    assert study_rows[0]["patient_id"] == study_rows[1]["patient_id"]
+    assert study_rows[2]["patient_id"] != study_rows[0]["patient_id"]
+    upgraded_engine.dispose()
