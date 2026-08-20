@@ -224,6 +224,7 @@ class JobService:
             log_audit_event(
                 action="CREATE_STUDY",
                 resource_id=str(study.public_id),
+                actor=str(current_user.public_id) if current_user is not None else None,
                 details={"job_id": str(job.public_id), "study_type": "dicom"},
             )
 
@@ -358,6 +359,7 @@ class JobService:
             log_audit_event(
                 action="CREATE_STUDY",
                 resource_id=str(study.public_id),
+                actor=str(current_user.public_id) if current_user is not None else None,
                 details={"job_id": str(job.public_id), "study_type": "nifti"},
             )
 

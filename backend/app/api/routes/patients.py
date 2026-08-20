@@ -149,6 +149,7 @@ def list_patients(
     log_audit_event(
         action="LIST_PATIENTS",
         resource_id="patients_list",
+        actor=str(current_user.public_id),
         details={"result_count": len(patients)},
     )
     return [_build_patient_response(p, session) for p in patients]
@@ -216,6 +217,7 @@ def create_patient(
     log_audit_event(
         action="CREATE_PATIENT",
         resource_id=str(patient.public_id),
+        actor=str(current_user.public_id),
         details={"pseudonym": patient.pseudonym},
     )
 
@@ -273,6 +275,7 @@ def get_patient(
     log_audit_event(
         action="VIEW_PATIENT",
         resource_id=str(patient.public_id),
+        actor=str(current_user.public_id),
         details={"studies_count": len(study_items)},
     )
 
@@ -314,6 +317,7 @@ def update_patient(
     log_audit_event(
         action="UPDATE_PATIENT",
         resource_id=str(patient.public_id),
+        actor=str(current_user.public_id),
         details={"updated_fields": list(payload.model_dump(exclude_unset=True).keys())},
     )
 
@@ -367,6 +371,7 @@ def assign_doctor_to_patient(
     log_audit_event(
         action="ASSIGN_DOCTOR",
         resource_id=str(patient.public_id),
+        actor=str(current_user.public_id),
         details={"doctor_public_id": str(doctor.public_id), "doctor_name": doctor.name},
     )
 
@@ -406,6 +411,7 @@ def remove_doctor_assignment(
         log_audit_event(
             action="UNASSIGN_DOCTOR",
             resource_id=str(patient.public_id),
+            actor=str(current_user.public_id),
             details={"doctor_public_id": str(doctor.public_id)},
         )
 

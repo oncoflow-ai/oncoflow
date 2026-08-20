@@ -8,7 +8,6 @@ from typing import Generator
 from app.core.config import get_settings
 from app.infra.db.session import create_session_factory
 from app.infra.db.models import User, Patient, Assignment, Study
-from app.core.audit import current_actor
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 optional_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
@@ -48,9 +47,6 @@ def get_current_user(
     if user is None:
         raise credentials_exception
         
-    # Inject into context var for audit logging
-    current_actor.set(str(user.public_id))
-    
     return user
 
 
@@ -68,8 +64,6 @@ def get_optional_current_user(
             return None
         user_uuid = UUID(user_id_str)
         user = session.query(User).filter(User.public_id == user_uuid).first()
-        if user:
-            current_actor.set(str(user.public_id))
         return user
     except Exception:
         return None

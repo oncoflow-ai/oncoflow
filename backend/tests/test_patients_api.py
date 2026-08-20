@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.security import create_access_token
-from app.infra.db.models import Assignment, Patient, Study, User
+from app.infra.db.models import Assignment, AuditLog, Patient, Study, User
 from app.infra.db.session import create_session_factory
 from app.main import create_app
 
@@ -199,6 +199,23 @@ def test_create_and_list_patients(app_and_client, auth_tokens):
     assert list_admin_resp.status_code == 200
     admin_patients = list_admin_resp.json()
     assert any(p["id"] == patient_id for p in admin_patients)
+
+
+def test_create_patient_audit_stores_authenticated_actor(app_and_client, auth_tokens):
+    _, client = app_and_client
+    response = client.post(
+        "/api/v1/patients",
+        json={"name": "PAT-AUDIT-ACTOR"},
+        headers={"Authorization": f"Bearer {auth_tokens['dr_a']['token']}"},
+    )
+
+    assert response.status_code == 201
+    with create_session_factory()() as session:
+        event = session.query(AuditLog).filter(
+            AuditLog.action == "CREATE_PATIENT",
+            AuditLog.resource_id == response.json()["id"],
+        ).one()
+        assert event.actor_id == auth_tokens["dr_a"]["id"]
 
 
 def test_abac_patient_detail_access(app_and_client, auth_tokens):
