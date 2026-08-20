@@ -296,20 +296,16 @@ def update_patient(
     patient = _find_patient(patient_id, session)
     verify_patient_access(patient, current_user, session)
 
-    if payload.pseudonym is not None:
-        patient.pseudonym = payload.pseudonym
-    if payload.dob is not None:
-        patient.dob = payload.dob
-    if payload.gender is not None:
-        patient.gender = payload.gender
-    if payload.diagnosis is not None:
-        patient.diagnosis = payload.diagnosis
-    if payload.diagnosis_location is not None:
-        patient.diagnosis_location = payload.diagnosis_location
-    if payload.status is not None:
-        patient.status = payload.status
-    if payload.notes is not None:
-        patient.notes = payload.notes
+    changes = payload.model_dump(exclude_unset=True)
+    for field_name in ("pseudonym", "status"):
+        if field_name in changes and changes[field_name] is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"{field_name} cannot be null",
+            )
+
+    for field_name, value in changes.items():
+        setattr(patient, field_name, value)
 
     session.commit()
     session.refresh(patient)
@@ -318,7 +314,7 @@ def update_patient(
         action="UPDATE_PATIENT",
         resource_id=str(patient.public_id),
         actor=str(current_user.public_id),
-        details={"updated_fields": list(payload.model_dump(exclude_unset=True).keys())},
+        details={"updated_fields": list(changes.keys())},
     )
 
     return _build_patient_response(patient, session)

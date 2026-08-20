@@ -431,3 +431,55 @@ def test_update_patient(app_and_client, auth_tokens):
     assert patch_resp.status_code == 200
     assert patch_resp.json()["status"] == "review"
     assert patch_resp.json()["diagnosis"] == "Updated Diagnosis"
+
+
+def test_update_patient_clears_nullable_fields_and_preserves_omitted_values(
+    app_and_client,
+    auth_tokens,
+):
+    _, client = app_and_client
+    headers_admin = {"Authorization": f"Bearer {auth_tokens['admin']['token']}"}
+    created = client.post(
+        "/api/v1/patients",
+        json={
+            "name": "PAT-CLEAR-NULLABLE",
+            "diagnosis": "Original diagnosis",
+            "notes": "keep this note",
+            "status": "review",
+        },
+        headers=headers_admin,
+    ).json()
+
+    response = client.patch(
+        f"/api/v1/patients/{created['id']}",
+        json={"diagnosis": None},
+        headers=headers_admin,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["diagnosis"] is None
+    assert response.json()["notes"] == "keep this note"
+    assert response.json()["status"] == "review"
+
+
+@pytest.mark.parametrize("field_name", ["pseudonym", "status"])
+def test_update_patient_rejects_null_non_nullable_fields(
+    app_and_client,
+    auth_tokens,
+    field_name: str,
+):
+    _, client = app_and_client
+    headers_admin = {"Authorization": f"Bearer {auth_tokens['admin']['token']}"}
+    created = client.post(
+        "/api/v1/patients",
+        json={"name": f"PAT-NONNULL-{field_name}"},
+        headers=headers_admin,
+    ).json()
+
+    response = client.patch(
+        f"/api/v1/patients/{created['id']}",
+        json={field_name: None},
+        headers=headers_admin,
+    )
+
+    assert response.status_code == 422
