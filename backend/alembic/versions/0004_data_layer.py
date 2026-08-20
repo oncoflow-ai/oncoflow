@@ -1,6 +1,6 @@
 """add comparisons, reports, and audit_logs tables
 
-Revision ID: 0004_add_comparisons_reports_audit_logs
+Revision ID: 0004_data_layer
 Revises: a1b2c3d4e5f6
 Create Date: 2026-08-20 12:50:00.000000
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '0004_add_comparisons_reports_audit_logs'
+revision: str = '0004_data_layer'
 down_revision: Union[str, None] = 'a1b2c3d4e5f6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
