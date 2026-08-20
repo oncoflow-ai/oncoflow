@@ -306,6 +306,49 @@ def test_non_admin_cannot_manage_assignments(app_and_client, auth_tokens):
         ]
 
 
+def test_non_admin_cannot_assign_during_patient_creation(app_and_client, auth_tokens):
+    _, client = app_and_client
+    response = client.post(
+        "/api/v1/patients",
+        json={
+            "name": "PAT-CREATE-ASSIGN-BYPASS",
+            "assignedPhysicianId": auth_tokens["researcher"]["id"],
+        },
+        headers={"Authorization": f"Bearer {auth_tokens['dr_a']['token']}"},
+    )
+
+    assert response.status_code == 403
+    with create_session_factory()() as session:
+        assert session.query(Patient).filter(
+            Patient.pseudonym == "PAT-CREATE-ASSIGN-BYPASS"
+        ).count() == 0
+
+
+def test_admin_creation_rejects_non_clinical_assignment(app_and_client, auth_tokens):
+    _, client = app_and_client
+    response = client.post(
+        "/api/v1/patients",
+        json={
+            "name": "PAT-CREATE-INVALID-ROLE",
+            "assignedPhysicianId": auth_tokens["researcher"]["id"],
+        },
+        headers={"Authorization": f"Bearer {auth_tokens['admin']['token']}"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_admin_creation_propagates_missing_assignment_target(app_and_client, auth_tokens):
+    _, client = app_and_client
+    response = client.post(
+        "/api/v1/patients",
+        json={"name": "PAT-CREATE-MISSING-TARGET", "assignedPhysicianId": str(uuid4())},
+        headers={"Authorization": f"Bearer {auth_tokens['admin']['token']}"},
+    )
+
+    assert response.status_code == 404
+
+
 @pytest.mark.parametrize("target_key", ["clinician", "radiologist"])
 def test_admin_can_assign_other_clinical_roles(app_and_client, auth_tokens, target_key: str):
     _, client = app_and_client

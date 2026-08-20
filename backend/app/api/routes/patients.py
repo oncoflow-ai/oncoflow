@@ -188,10 +188,17 @@ def create_patient(
     # Assign doctor if specified or if logged in as doctor
     doctor_to_assign: User | None = None
     if payload.assigned_physician_id:
-        try:
-            doctor_to_assign = _find_user(payload.assigned_physician_id, session)
-        except HTTPException:
-            pass
+        if current_user.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only administrators can specify patient assignments",
+            )
+        doctor_to_assign = _find_user(payload.assigned_physician_id, session)
+        if doctor_to_assign.role not in ASSIGNABLE_PATIENT_ROLES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Patient assignments require a doctor, clinician, or radiologist",
+            )
     elif current_user.role in {"doctor", "clinician", "radiologist"}:
         doctor_to_assign = current_user
 
