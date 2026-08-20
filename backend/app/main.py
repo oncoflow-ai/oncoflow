@@ -111,6 +111,8 @@ from datetime import date
 
 def bootstrap_users() -> None:
     settings = get_settings()
+    if settings.environment != "development" or not settings.seed_demo_data:
+        return
     try:
         session_factory = create_session_factory()
         demo_users = [
@@ -173,29 +175,28 @@ def bootstrap_users() -> None:
                     session.flush()
                 created_users[u["email"]] = user
 
-            if settings.environment != "test":
-                doctor = created_users.get("dr.cohen@ichilov.gov.il")
+            doctor = created_users.get("dr.cohen@ichilov.gov.il")
 
-                for p_data in demo_patients:
-                    patient = session.query(Patient).filter(Patient.pseudonym == p_data["pseudonym"]).first()
-                    if not patient:
-                        patient = Patient(
-                            pseudonym=p_data["pseudonym"],
-                            diagnosis=p_data["diagnosis"],
-                            diagnosis_location=p_data["diagnosis_location"],
-                            status=p_data["status"],
-                            dob=p_data["dob"],
-                        )
-                        session.add(patient)
-                        session.flush()
+            for p_data in demo_patients:
+                patient = session.query(Patient).filter(Patient.pseudonym == p_data["pseudonym"]).first()
+                if not patient:
+                    patient = Patient(
+                        pseudonym=p_data["pseudonym"],
+                        diagnosis=p_data["diagnosis"],
+                        diagnosis_location=p_data["diagnosis_location"],
+                        status=p_data["status"],
+                        dob=p_data["dob"],
+                    )
+                    session.add(patient)
+                    session.flush()
 
-                    if doctor and patient:
-                        assign = session.query(Assignment).filter(
-                            Assignment.doctor_id == doctor.id,
-                            Assignment.patient_id == patient.id,
-                        ).first()
-                        if not assign:
-                            session.add(Assignment(doctor_id=doctor.id, patient_id=patient.id))
+                if doctor and patient:
+                    assign = session.query(Assignment).filter(
+                        Assignment.doctor_id == doctor.id,
+                        Assignment.patient_id == patient.id,
+                    ).first()
+                    if not assign:
+                        session.add(Assignment(doctor_id=doctor.id, patient_id=patient.id))
 
             session.commit()
     except Exception as exc:

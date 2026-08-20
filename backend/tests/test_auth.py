@@ -1,9 +1,17 @@
 import pytest
 from app.main import create_app, bootstrap_users
 from fastapi.testclient import TestClient
+from app.core.config import get_settings
+
+
+def _enable_demo_seed(monkeypatch) -> None:
+    monkeypatch.setenv("ONCOFLOW_ENVIRONMENT", "development")
+    monkeypatch.setenv("ONCOFLOW_SEED_DEMO_DATA", "true")
+    get_settings.cache_clear()
 
 def test_login_success(monkeypatch):
     monkeypatch.setenv("ONCOFLOW_DATABASE_URL", "sqlite:///:memory:")
+    _enable_demo_seed(monkeypatch)
     app = create_app()
     bootstrap_users()
     with TestClient(app) as client:
@@ -22,6 +30,7 @@ def test_login_success(monkeypatch):
 
 def test_login_failure(monkeypatch):
     monkeypatch.setenv("ONCOFLOW_DATABASE_URL", "sqlite:///:memory:")
+    _enable_demo_seed(monkeypatch)
     app = create_app()
     bootstrap_users()
     with TestClient(app) as client:
@@ -34,6 +43,7 @@ def test_login_failure(monkeypatch):
 
 def test_protected_route(monkeypatch):
     monkeypatch.setenv("ONCOFLOW_DATABASE_URL", "sqlite:///:memory:")
+    _enable_demo_seed(monkeypatch)
     app = create_app()
     bootstrap_users()
     with TestClient(app) as client:

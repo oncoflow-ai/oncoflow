@@ -16,6 +16,7 @@ class Settings:
     log_level: str = "INFO"
     verbose_worker_logs: bool = False
     allow_phi_logging: bool = False
+    seed_demo_data: bool = False
     database_url: str = "postgresql+psycopg://oncoflow:oncoflow@localhost:5432/oncoflow"
     storage_root: str = "./var/oncoflow"
     storage_staging_dir: str = "staging"
@@ -73,6 +74,7 @@ class Settings:
             log_level=get_str("ONCOFLOW_LOG_LEVEL", cls.log_level),
             verbose_worker_logs=get_bool("ONCOFLOW_VERBOSE_WORKER_LOGS", cls.verbose_worker_logs),
             allow_phi_logging=get_bool("ONCOFLOW_ALLOW_PHI_LOGGING", cls.allow_phi_logging),
+            seed_demo_data=get_bool("ONCOFLOW_SEED_DEMO_DATA", cls.seed_demo_data),
             database_url=get_str("ONCOFLOW_DATABASE_URL", cls.database_url),
             storage_root=get_str("ONCOFLOW_STORAGE_ROOT", cls.storage_root),
             storage_staging_dir=get_str(
