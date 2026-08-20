@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -248,7 +249,9 @@ def run_longitudinal_comparison(
             session.add(db_comparison)
             session.commit()
     except Exception as exc:
-        logger.warning("Failed to persist comparison to database: %s", exc)
+        logger.exception("Failed to persist comparison to database")
+        shutil.rmtree(output_location.absolute_path, ignore_errors=True)
+        raise ComparisonError(500, "failed to persist comparison") from exc
 
     return {
         "comparison_id": comparison_id,
