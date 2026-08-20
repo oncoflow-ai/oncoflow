@@ -110,95 +110,102 @@ from app.core.security import get_password_hash
 from datetime import date
 
 def bootstrap_users() -> None:
-    session_factory = create_session_factory()
-    demo_users = [
-        {"email": "admin@oncoflow.local", "name": "Maya Administrator", "password": "admin123", "role": "admin"},
-        {"email": "dr.cohen@ichilov.gov.il", "name": "Dr. D. Cohen", "password": "password", "role": "doctor"},
-        {"email": "radiology@oncoflow.local", "name": "Alex Rahman", "password": "password", "role": "radiologist"},
-        {"email": "clinician@oncoflow.local", "name": "Noa Clinical", "password": "password", "role": "clinician"},
-        {"email": "sarah.jenkins@example.test", "name": "Sarah Jenkins", "password": "patient123", "role": "patient"}
-    ]
-    demo_patients = [
-        {
-            "pseudonym": "P-9001",
-            "diagnosis": "Demo lesion (sample BraTS volumes)",
-            "diagnosis_location": "See repo data/P01",
-            "status": "active",
-            "dob": date(1975, 6, 1),
-        },
-        {
-            "pseudonym": "P-1029",
-            "diagnosis": "Osteosarcoma",
-            "diagnosis_location": "Distal Left Femur",
-            "status": "active",
-            "dob": date(1994, 7, 22),
-        },
-        {
-            "pseudonym": "P-1031",
-            "diagnosis": "Glioblastoma",
-            "diagnosis_location": "Right Temporal Lobe",
-            "status": "review",
-            "dob": date(1958, 11, 3),
-        },
-        {
-            "pseudonym": "P-1044",
-            "diagnosis": "Breast Carcinoma Stage III",
-            "diagnosis_location": "Left Breast",
-            "status": "active",
-            "dob": date(1972, 4, 15),
-        },
-        {
-            "pseudonym": "P-1051",
-            "diagnosis": "Non-Hodgkin Lymphoma",
-            "diagnosis_location": "Mediastinal",
-            "status": "active",
-            "dob": date(1965, 9, 28),
-        },
-    ]
+    settings = get_settings()
+    try:
+        session_factory = create_session_factory()
+        demo_users = [
+            {"email": "admin@oncoflow.local", "name": "Maya Administrator", "password": "admin123", "role": "admin"},
+            {"email": "dr.cohen@ichilov.gov.il", "name": "Dr. D. Cohen", "password": "password", "role": "doctor"},
+            {"email": "radiology@oncoflow.local", "name": "Alex Rahman", "password": "password", "role": "radiologist"},
+            {"email": "clinician@oncoflow.local", "name": "Noa Clinical", "password": "password", "role": "clinician"},
+            {"email": "sarah.jenkins@example.test", "name": "Sarah Jenkins", "password": "patient123", "role": "patient"}
+        ]
+        demo_patients = [
+            {
+                "pseudonym": "P-9001",
+                "diagnosis": "Demo lesion (sample BraTS volumes)",
+                "diagnosis_location": "See repo data/P01",
+                "status": "active",
+                "dob": date(1975, 6, 1),
+            },
+            {
+                "pseudonym": "P-1029",
+                "diagnosis": "Osteosarcoma",
+                "diagnosis_location": "Distal Left Femur",
+                "status": "active",
+                "dob": date(1994, 7, 22),
+            },
+            {
+                "pseudonym": "P-1031",
+                "diagnosis": "Glioblastoma",
+                "diagnosis_location": "Right Temporal Lobe",
+                "status": "review",
+                "dob": date(1958, 11, 3),
+            },
+            {
+                "pseudonym": "P-1044",
+                "diagnosis": "Breast Carcinoma Stage III",
+                "diagnosis_location": "Left Breast",
+                "status": "active",
+                "dob": date(1972, 4, 15),
+            },
+            {
+                "pseudonym": "P-1051",
+                "diagnosis": "Non-Hodgkin Lymphoma",
+                "diagnosis_location": "Mediastinal",
+                "status": "active",
+                "dob": date(1965, 9, 28),
+            },
+        ]
 
-    with session_factory() as session:
-        created_users = {}
-        for u in demo_users:
-            user = session.query(User).filter(User.email == u["email"]).first()
-            if not user:
-                user = User(
-                    email=u["email"],
-                    name=u["name"],
-                    hashed_password=get_password_hash(u["password"]),
-                    role=u["role"]
-                )
-                session.add(user)
-                session.flush()
-            created_users[u["email"]] = user
+        with session_factory() as session:
+            created_users = {}
+            for u in demo_users:
+                user = session.query(User).filter(User.email == u["email"]).first()
+                if not user:
+                    user = User(
+                        email=u["email"],
+                        name=u["name"],
+                        hashed_password=get_password_hash(u["password"]),
+                        role=u["role"]
+                    )
+                    session.add(user)
+                    session.flush()
+                created_users[u["email"]] = user
 
-        doctor = created_users.get("dr.cohen@ichilov.gov.il")
+            if settings.environment != "test":
+                doctor = created_users.get("dr.cohen@ichilov.gov.il")
 
-        for p_data in demo_patients:
-            patient = session.query(Patient).filter(Patient.pseudonym == p_data["pseudonym"]).first()
-            if not patient:
-                patient = Patient(
-                    pseudonym=p_data["pseudonym"],
-                    diagnosis=p_data["diagnosis"],
-                    diagnosis_location=p_data["diagnosis_location"],
-                    status=p_data["status"],
-                    dob=p_data["dob"],
-                )
-                session.add(patient)
-                session.flush()
+                for p_data in demo_patients:
+                    patient = session.query(Patient).filter(Patient.pseudonym == p_data["pseudonym"]).first()
+                    if not patient:
+                        patient = Patient(
+                            pseudonym=p_data["pseudonym"],
+                            diagnosis=p_data["diagnosis"],
+                            diagnosis_location=p_data["diagnosis_location"],
+                            status=p_data["status"],
+                            dob=p_data["dob"],
+                        )
+                        session.add(patient)
+                        session.flush()
 
-            if doctor and patient:
-                assign = session.query(Assignment).filter(
-                    Assignment.doctor_id == doctor.id,
-                    Assignment.patient_id == patient.id,
-                ).first()
-                if not assign:
-                    session.add(Assignment(doctor_id=doctor.id, patient_id=patient.id))
+                    if doctor and patient:
+                        assign = session.query(Assignment).filter(
+                            Assignment.doctor_id == doctor.id,
+                            Assignment.patient_id == patient.id,
+                        ).first()
+                        if not assign:
+                            session.add(Assignment(doctor_id=doctor.id, patient_id=patient.id))
 
-        session.commit()
+            session.commit()
+    except Exception as exc:
+        logging.getLogger("oncoflow.main").warning("bootstrap_users skipped: %s", exc)
+
 
 
 def create_app() -> FastAPI:
     configure_logging()
+    bootstrap_users()
     settings = get_settings()
     app = FastAPI(title=settings.app_name)
     app.add_middleware(
@@ -209,10 +216,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     if hasattr(app, "add_event_handler"):
-        app.add_event_handler("startup", bootstrap_users)
         app.add_event_handler("shutdown", shutdown_background_workers)
     app.include_router(api_router, prefix=settings.api_prefix)
     return app
+
 
 
 app = create_app()

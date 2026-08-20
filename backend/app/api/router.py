@@ -21,6 +21,7 @@ from app.api.routes.jobs import router as jobs_router
 from app.api.routes.results import router as results_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.patients import router as patients_router
+from app.api.routes.audit import router as audit_router
 from app.modules.segmentation.runtime import get_inference_readiness
 from app.api.deps import get_current_user
 
@@ -45,6 +46,8 @@ def readiness() -> dict[str, object]:
 
 router.include_router(auth_router)
 router.include_router(patients_router)
+router.include_router(audit_router, dependencies=[Depends(get_current_user)])
 router.include_router(jobs_router, dependencies=[Depends(get_current_user)])
 router.include_router(results_router, dependencies=[Depends(get_current_user)])
+
 

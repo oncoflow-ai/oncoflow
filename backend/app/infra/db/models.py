@@ -4,10 +4,11 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, Date, DateTime, ForeignKey, String, Text
+from sqlalchemy import Float, JSON, Date, DateTime, ForeignKey, String, Text
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
+
 
 from app.infra.db.base import Base, utc_now
 
@@ -39,6 +40,11 @@ class Patient(Base):
         back_populates="patient",
         cascade="all, delete-orphan",
     )
+    reports: Mapped[list["Report"]] = relationship(
+        back_populates="patient",
+        cascade="all, delete-orphan",
+    )
+
 
 
 class Assignment(Base):
@@ -229,4 +235,62 @@ class User(Base):
         back_populates="doctor",
         cascade="all, delete-orphan",
     )
+
+
+class Comparison(Base):
+    __tablename__ = "comparisons"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    public_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), unique=True, default=uuid4, index=True)
+    study_a_id: Mapped[int] = mapped_column(ForeignKey("studies.id"), index=True)
+    study_b_id: Mapped[int] = mapped_column(ForeignKey("studies.id"), index=True)
+    volume_a: Mapped[float | None] = mapped_column(Float, nullable=True)
+    volume_b: Mapped[float | None] = mapped_column(Float, nullable=True)
+    delta_cm3: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pct_change: Mapped[float | None] = mapped_column(Float, nullable=True)
+    dice_overlap: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hd95_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    growth_rate_cm3_per_day: Mapped[float | None] = mapped_column(Float, nullable=True)
+    interpretation_flag: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    recist_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    vol_delta_ci_half_cm3: Mapped[float | None] = mapped_column(Float, nullable=True)
+    registration_ncc: Mapped[float | None] = mapped_column(Float, nullable=True)
+    comparison_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    study_a: Mapped[Study] = relationship(foreign_keys=[study_a_id])
+    study_b: Mapped[Study] = relationship(foreign_keys=[study_b_id])
+    reports: Mapped[list["Report"]] = relationship(
+        back_populates="comparison",
+        cascade="all, delete-orphan",
+    )
+
+
+class Report(Base):
+    __tablename__ = "reports"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    public_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), unique=True, default=uuid4, index=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), index=True)
+    comparison_id: Mapped[int | None] = mapped_column(ForeignKey("comparisons.id"), nullable=True, index=True)
+    pdf_artifact_id: Mapped[int | None] = mapped_column(ForeignKey("artifacts.id"), nullable=True, index=True)
+    signature: Mapped[str | None] = mapped_column(Text, nullable=True)
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    patient: Mapped[Patient] = relationship(back_populates="reports")
+    comparison: Mapped[Comparison | None] = relationship(back_populates="reports")
+    pdf_artifact: Mapped[Artifact | None] = relationship()
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    actor_id: Mapped[str] = mapped_column(String(255), index=True)
+    action: Mapped[str] = mapped_column(String(128), index=True)
+    resource_id: Mapped[str] = mapped_column(String(255), index=True)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+
 
