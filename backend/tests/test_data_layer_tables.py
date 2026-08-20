@@ -222,6 +222,13 @@ def test_audit_logs_api_endpoint() -> None:
     filtered_data = resp.json()
     assert all(item["action"] == "CREATE_PATIENT" for item in filtered_data)
 
+    with session_factory() as reopened_session:
+        query_events = reopened_session.query(AuditLog).filter(
+            AuditLog.action == "QUERY_AUDIT_LOGS"
+        ).all()
+        assert len(query_events) == 2
+        assert all(event.actor_id == str(admin_user.public_id) for event in query_events)
+
 
 def test_alembic_migration_0004(tmp_path: Path) -> None:
     from alembic import command

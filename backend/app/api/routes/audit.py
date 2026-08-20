@@ -44,7 +44,6 @@ def list_audit_logs(
         resource_id="audit_logs",
         actor=str(current_user.public_id),
         details={"result_count": len(logs), "offset": offset, "limit": limit},
-        db=session,
     )
 
     return [
