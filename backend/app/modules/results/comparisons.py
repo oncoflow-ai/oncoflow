@@ -18,8 +18,9 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
+from app.api.deps import verify_patient_access
 from app.core.config import get_settings
-from app.infra.db.models import Artifact, Comparison, Study
+from app.infra.db.models import Artifact, Comparison, Patient, Study, User
 from app.infra.db.session import create_session_factory
 from app.modules.artifacts.storage import resolve_artifact_location
 
@@ -36,13 +37,14 @@ class ComparisonError(Exception):
 @dataclass(frozen=True)
 class _StudyAssets:
     internal_id: int
+    patient_id: int
     public_id: str
     scan_absolute_path: Path
     mask_absolute_path: Path | None
     acquired_at: date | None
 
 
-def _resolve_study_assets(session, study_public_id: str) -> _StudyAssets:
+def _resolve_study_assets(session, study_public_id: str, current_user: User) -> _StudyAssets:
     try:
         parsed = UUID(study_public_id)
     except ValueError as exc:
@@ -51,6 +53,15 @@ def _resolve_study_assets(session, study_public_id: str) -> _StudyAssets:
     study = session.query(Study).filter(Study.public_id == parsed).one_or_none()
     if study is None:
         raise ComparisonError(404, f"study not found: {study_public_id}")
+
+    patient = (
+        session.query(Patient).filter(Patient.id == study.patient_id).one_or_none()
+        if study.patient_id is not None
+        else None
+    )
+    if patient is None:
+        raise ComparisonError(404, f"study not found: {study_public_id}")
+    verify_patient_access(patient, current_user, session)
 
     scan_artifact = (
         session.query(Artifact)
@@ -89,6 +100,7 @@ def _resolve_study_assets(session, study_public_id: str) -> _StudyAssets:
 
     return _StudyAssets(
         internal_id=study.id,
+        patient_id=patient.id,
         public_id=str(study.public_id),
         scan_absolute_path=Path(scan_location.absolute_path),
         mask_absolute_path=(
@@ -124,14 +136,17 @@ def run_longitudinal_comparison(
     *,
     baseline_study_id: str,
     followup_study_id: str,
+    current_user: User,
 ) -> dict[str, Any]:
     if baseline_study_id == followup_study_id:
         raise ComparisonError(400, "baseline and follow-up study IDs must differ")
 
     session_factory = create_session_factory()
     with session_factory() as session:
-        baseline = _resolve_study_assets(session, baseline_study_id)
-        followup = _resolve_study_assets(session, followup_study_id)
+        baseline = _resolve_study_assets(session, baseline_study_id, current_user)
+        followup = _resolve_study_assets(session, followup_study_id, current_user)
+        if baseline.patient_id != followup.patient_id:
+            raise ComparisonError(422, "studies must belong to the same patient")
 
     settings = get_settings()
     comparison_id = str(uuid4())

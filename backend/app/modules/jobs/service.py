@@ -10,6 +10,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 from app.api.schemas.jobs import JobErrorPayload
+from app.api.deps import verify_patient_access
 from app.core.audit import log_audit_event
 from app.core.config import get_settings
 from app.modules.artifacts.storage import resolve_artifact_location
@@ -455,7 +456,7 @@ class JobService:
             submitted_at=submitted_at,
         )
 
-    def get_job_status(self, job_public_id: str) -> JobStatusResult:
+    def get_job_status(self, job_public_id: str, *, current_user: User) -> JobStatusResult:
         try:
             parsed_job_id = UUID(job_public_id)
         except ValueError as exc:
@@ -467,6 +468,14 @@ class JobService:
                 raise SubmissionValidationError(404, "job not found")
 
             study = session.query(Study).filter(Study.id == job.study_id).one()
+            patient = (
+                session.query(Patient).filter(Patient.id == study.patient_id).one_or_none()
+                if study.patient_id is not None
+                else None
+            )
+            if patient is None:
+                raise SubmissionValidationError(404, "job not found")
+            verify_patient_access(patient, current_user, session)
             error = None
             if job.failure_payload:
                 error = JobErrorPayload(

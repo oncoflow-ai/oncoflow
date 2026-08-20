@@ -4,7 +4,7 @@ import asyncio
 import io
 import zipfile
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -292,6 +292,63 @@ def test_get_job_status_returns_failure_payload(client) -> None:
     assert body["status"] == "failed"
     assert body["stage"] == "persisting"
     assert body["error"]["code"] == "conversion-error"
+
+
+def test_get_job_status_rejects_unassigned_clinician(client) -> None:
+    archive_bytes = _zip_bytes({"exam/file1.dcm": b"dicom"})
+    submitted = client.post(
+        "/api/v1/jobs/mri-ingestion",
+        files={"study_archive": ("exam.zip", archive_bytes, "application/zip")},
+    ).json()
+    with create_session_factory()() as session:
+        outsider = User(
+            email="job-outsider@test.local",
+            name="Job Outsider",
+            hashed_password="hash",
+            role="clinician",
+        )
+        session.add(outsider)
+        session.commit()
+
+    client.app.dependency_overrides[get_current_user] = lambda: outsider
+    response = client.get(f"/api/v1/jobs/{submitted['jobId']}")
+
+    assert response.status_code == 403
+
+
+def test_comparison_rejects_studies_from_different_patients(client) -> None:
+    with create_session_factory()() as session:
+        patients = [Patient(pseudonym=f"PAT-COMP-{index}") for index in (1, 2)]
+        session.add_all(patients)
+        session.flush()
+        studies = []
+        for index, patient in enumerate(patients, start=1):
+            study = Study(
+                public_id=uuid4(),
+                patient_id=patient.id,
+                patient_public_id=patient.public_id,
+                study_instance_uid=f"comparison-cross-patient-{index}",
+                source_kind="nifti",
+                staging_status="staged",
+            )
+            session.add(study)
+            session.flush()
+            session.add(Artifact(
+                study_id=study.id,
+                artifact_kind="nifti-source",
+                storage_root="raw",
+                relative_path=f"cross-patient/{index}.nii.gz",
+            ))
+            studies.append(str(study.public_id))
+        session.commit()
+
+    response = client.post(
+        "/api/v1/jobs/longitudinal-comparison",
+        json={"baselineStudyId": studies[0], "followupStudyId": studies[1]},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "studies must belong to the same patient"
 
 
 def test_invalid_state_transition_is_rejected() -> None:

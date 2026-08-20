@@ -155,11 +155,15 @@ async def submit_demo_mri_segmentation_job(
     response_model=ComparisonResponse,
     status_code=status.HTTP_200_OK,
 )
-def submit_longitudinal_comparison(payload: LongitudinalComparisonRequest) -> ComparisonResponse:
+def submit_longitudinal_comparison(
+    payload: LongitudinalComparisonRequest,
+    current_user: User = Depends(get_current_user),
+) -> ComparisonResponse:
     try:
         result = run_longitudinal_comparison(
             baseline_study_id=payload.baseline_study_id,
             followup_study_id=payload.followup_study_id,
+            current_user=current_user,
         )
     except ComparisonError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
@@ -168,9 +172,12 @@ def submit_longitudinal_comparison(payload: LongitudinalComparisonRequest) -> Co
 
 
 @router.get("/{job_id}", response_model=JobStatusResponse)
-def get_job_status(job_id: str) -> JobStatusResponse:
+def get_job_status(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+) -> JobStatusResponse:
     try:
-        job_status = JobService().get_job_status(job_id)
+        job_status = JobService().get_job_status(job_id, current_user=current_user)
     except SubmissionValidationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
