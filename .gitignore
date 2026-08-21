@@ -48,7 +48,20 @@ docs/superpowers/
 
 # Backend local runtime / cache (staging, derived artifacts)
 backend/var/
+var/
+
+# Large datasets / archives
+data/*.zip
+*.zip
+
+# Terraform local cache and state
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+*.tfstate
+*.tfstate.*
 
 # External ML Tools
 ml/external_tools/
 ml/exploration/outputs/
+
