@@ -45,18 +45,39 @@ export interface Scan {
   isAnnotated: boolean
 }
 
+export interface RAGSourceRef {
+  chunk_id?: string
+  title: string
+  document_type?: string
+  snippet?: string
+  relevance_score?: number
+  created_at?: string
+}
+
 export interface Summary {
   patientId: string
   generatedAt: string      // ISO datetime
   model: string
   text: string
   recommendations?: string[]
+  comparison?: string
+  findings?: string
+  impression?: string
+  ragSources?: RAGSourceRef[]
+  agentTrace?: {
+    validation?: {
+      isValid: boolean
+      confidenceScore: number
+      warnings: string[]
+    }
+  }
 }
 
 export interface MriUrl {
   url: string
   expiresAt: string        // ISO datetime
 }
+
 
 export type BackendJobStatus = 'queued' | 'running' | 'failed' | 'completed'
 

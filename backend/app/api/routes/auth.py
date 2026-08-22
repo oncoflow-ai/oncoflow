@@ -17,13 +17,17 @@ def login(
     """
     OAuth2 compatible token login, get an access token for future requests
     """
-    user = session.query(User).filter(User.email == form_data.username.lower()).first()
+    username_input = form_data.username.lower().strip()
+    user = session.query(User).filter(
+        (User.email.ilike(username_input)) | (User.name.ilike(username_input))
+    ).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
         
     access_token = create_access_token(subject=user.public_id)
     
