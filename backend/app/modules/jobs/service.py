@@ -218,17 +218,18 @@ class JobService:
                     payload={"reason": "job submitted"},
                     created_at=submitted_at,
                 ))
+                log_audit_event(
+                    action="CREATE_STUDY",
+                    resource_id=str(study.public_id),
+                    actor=str(current_user.public_id) if current_user is not None else None,
+                    details={"job_id": str(job.public_id), "study_type": "dicom"},
+                    db=session,
+                )
                 session.commit()
         except Exception:
             shutil.rmtree(archive_location.absolute_path.parent, ignore_errors=True)
             raise
 
-        log_audit_event(
-            action="CREATE_STUDY",
-            resource_id=str(study.public_id),
-            actor=str(current_user.public_id) if current_user is not None else None,
-            details={"job_id": str(job.public_id), "study_type": "dicom"},
-        )
         dispatch = self._dispatch_worker(
             job_id=str(job.public_id),
             study_id=str(study.public_id),
@@ -351,17 +352,18 @@ class JobService:
                     payload={"reason": "nifti job submitted"},
                     created_at=submitted_at,
                 ))
+                log_audit_event(
+                    action="CREATE_STUDY",
+                    resource_id=str(study.public_id),
+                    actor=str(current_user.public_id) if current_user is not None else None,
+                    details={"job_id": str(job.public_id), "study_type": "nifti"},
+                    db=session,
+                )
                 session.commit()
         except Exception:
             shutil.rmtree(scan_location.absolute_path.parent, ignore_errors=True)
             raise
 
-        log_audit_event(
-            action="CREATE_STUDY",
-            resource_id=str(study.public_id),
-            actor=str(current_user.public_id) if current_user is not None else None,
-            details={"job_id": str(job.public_id), "study_type": "nifti"},
-        )
         self._dispatch_nifti_worker(
             job_id=str(job.public_id),
             study_id=str(study.public_id),
@@ -441,6 +443,13 @@ class JobService:
                     payload={"reason": "demo MRI segmentation job submitted"},
                     created_at=submitted_at,
                 )
+            )
+            log_audit_event(
+                action="CREATE_STUDY",
+                resource_id=str(study.public_id),
+                actor=str(current_user.public_id) if current_user is not None else None,
+                details={"job_id": str(job.public_id), "study_type": "demo"},
+                db=session,
             )
             session.commit()
 

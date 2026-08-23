@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.infra.db.models import Artifact, Assignment, Job, Patient, Study
+from app.infra.db.models import Artifact, Assignment, AuditLog, Job, Patient, Study, User
 from app.infra.db.session import create_session_factory
 from app.modules.jobs.service import JobService
 from app.modules.jobs.state_machine import transition_job
@@ -19,7 +19,6 @@ from app.modules.jobs.worker_tasks import (
     execute_demo_mri_segmentation_job,
 )
 from app.api.deps import get_current_user
-from app.infra.db.models import User
 
 
 def _zip_bytes(files: dict[str, bytes]) -> bytes:
@@ -299,6 +298,76 @@ def test_nifti_database_failure_cleans_up_raw_files(
     } == baseline_storage_entries
     with create_session_factory()() as session:
         assert session.query(Study).count() == 0
+
+
+@pytest.mark.parametrize("submission_kind", ["dicom", "nifti", "demo"])
+def test_study_audit_failure_rolls_back_mutation_and_cleans_raw_files(
+    submission_kind: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage_root = Path(get_settings().storage_root)
+    baseline_storage_entries = {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    }
+    with create_session_factory()() as session:
+        admin = User(
+            email="study-audit-admin@test.local",
+            name="Study Audit Admin",
+            hashed_password="hash",
+            role="admin",
+        )
+        session.add(admin)
+        session.commit()
+        session.refresh(admin)
+        session.expunge(admin)
+
+    original_flush = Session.flush
+
+    def fail_when_auditing(session: Session, *args, **kwargs) -> None:
+        if any(isinstance(value, AuditLog) for value in session.new):
+            raise RuntimeError("audit database unavailable")
+        original_flush(session, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "flush", fail_when_auditing)
+
+    service = JobService()
+    if submission_kind == "dicom":
+        submission = service.submit_mri_study(
+            filename="study.zip",
+            content_type="application/zip",
+            archive_bytes=_zip_bytes({"exam/file.dcm": b"dicom"}),
+            source_label="audit failure cleanup",
+            current_user=admin,
+        )
+    elif submission_kind == "nifti":
+        submission = service.submit_nifti_study(
+            scan_filename="scan.nii.gz",
+            scan_bytes=b"nifti-bytes",
+            mask_filename=None,
+            mask_bytes=None,
+            source_label="audit failure cleanup",
+            acquired_at=None,
+            current_user=admin,
+        )
+    else:
+        submission = service.submit_demo_mri_segmentation(
+            scan_filename="demo.nii.gz",
+            scan_bytes=b"demo-bytes",
+            content_type="application/gzip",
+            source_label="audit failure cleanup",
+            acquired_at=None,
+            current_user=admin,
+        )
+
+    with pytest.raises(RuntimeError, match="audit database unavailable"):
+        asyncio.run(submission)
+
+    assert {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    } == baseline_storage_entries
+    with create_session_factory()() as session:
+        assert session.query(Study).count() == 0
+        assert session.query(AuditLog).filter(AuditLog.action == "CREATE_STUDY").count() == 0
 
 
 def test_submission_dispatches_identifiers_not_raw_bytes(monkeypatch: pytest.MonkeyPatch) -> None:

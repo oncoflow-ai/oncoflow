@@ -35,7 +35,7 @@ def log_audit_event(
 
     audit_logger.info("Audit Event", extra=event)
 
-    try:
+    if db is not None:
         from app.infra.db.models import AuditLog
 
         audit_entry = AuditLog(
@@ -44,16 +44,23 @@ def log_audit_event(
             resource_id=resource_id,
             details=details or {},
         )
-        if db is not None:
-            db.add(audit_entry)
-            db.flush()
-        else:
-            from app.infra.db.session import create_session_factory
+        db.add(audit_entry)
+        db.flush()
+        return
 
-            session_factory = create_session_factory()
-            with session_factory() as session:
-                session.add(audit_entry)
-                session.commit()
+    try:
+        from app.infra.db.models import AuditLog
+        from app.infra.db.session import create_session_factory
+
+        audit_entry = AuditLog(
+            actor_id=str(final_actor),
+            action=action,
+            resource_id=resource_id,
+            details=details or {},
+        )
+        session_factory = create_session_factory()
+        with session_factory() as session:
+            session.add(audit_entry)
+            session.commit()
     except Exception as exc:
         audit_logger.debug("Failed to persist audit log to database: %s", exc)
-

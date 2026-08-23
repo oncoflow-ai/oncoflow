@@ -211,15 +211,15 @@ def create_patient(
         session.add(assignment)
         session.flush()
 
-    session.commit()
-    session.refresh(patient)
-
     log_audit_event(
         action="CREATE_PATIENT",
         resource_id=str(patient.public_id),
         actor=str(current_user.public_id),
         details={"pseudonym": patient.pseudonym},
+        db=session,
     )
+    session.commit()
+    session.refresh(patient)
 
     return _build_patient_response(patient, session)
 
@@ -307,15 +307,15 @@ def update_patient(
     for field_name, value in changes.items():
         setattr(patient, field_name, value)
 
-    session.commit()
-    session.refresh(patient)
-
     log_audit_event(
         action="UPDATE_PATIENT",
         resource_id=str(patient.public_id),
         actor=str(current_user.public_id),
         details={"updated_fields": list(changes.keys())},
+        db=session,
     )
+    session.commit()
+    session.refresh(patient)
 
     return _build_patient_response(patient, session)
 
@@ -361,15 +361,15 @@ def assign_doctor_to_patient(
         patient_id=patient.id,
     )
     session.add(assignment)
-    session.commit()
-    session.refresh(assignment)
-
     log_audit_event(
         action="ASSIGN_DOCTOR",
         resource_id=str(patient.public_id),
         actor=str(current_user.public_id),
         details={"doctor_public_id": str(doctor.public_id), "doctor_name": doctor.name},
+        db=session,
     )
+    session.commit()
+    session.refresh(assignment)
 
     return AssignedDoctorResponse(
         id=str(doctor.public_id),
@@ -403,13 +403,14 @@ def remove_doctor_assignment(
     )
     if assignment:
         session.delete(assignment)
-        session.commit()
         log_audit_event(
             action="UNASSIGN_DOCTOR",
             resource_id=str(patient.public_id),
             actor=str(current_user.public_id),
             details={"doctor_public_id": str(doctor.public_id)},
+            db=session,
         )
+        session.commit()
 
 
 @router.get("/{patient_id}/studies", response_model=list[PatientStudyItemResponse])

@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect
+from sqlalchemy.orm import Session
 
 from app.core.audit import log_audit_event
 from app.core.security import create_access_token, get_password_hash
@@ -228,6 +229,42 @@ def test_audit_logs_api_endpoint() -> None:
         ).all()
         assert len(query_events) == 2
         assert all(event.actor_id == str(admin_user.public_id) for event in query_events)
+
+
+def test_audit_log_query_fails_closed_when_self_audit_cannot_persist(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with create_session_factory()() as session:
+        admin = User(
+            email="audit-query-failure@test.local",
+            name="Audit Query Failure Admin",
+            hashed_password=get_password_hash("password"),
+            role="admin",
+        )
+        session.add(admin)
+        session.commit()
+        admin_token = create_access_token({"sub": str(admin.public_id)})
+
+    client = TestClient(create_app())
+    original_flush = Session.flush
+
+    def fail_when_auditing(session: Session, *args, **kwargs) -> None:
+        if any(isinstance(value, AuditLog) for value in session.new):
+            raise RuntimeError("audit database unavailable")
+        original_flush(session, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "flush", fail_when_auditing)
+
+    with pytest.raises(RuntimeError, match="audit database unavailable"):
+        client.get(
+            "/api/v1/audit-logs",
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+
+    with create_session_factory()() as session:
+        assert session.query(AuditLog).filter(
+            AuditLog.action == "QUERY_AUDIT_LOGS"
+        ).count() == 0
 
 
 def test_alembic_migration_0004(tmp_path: Path) -> None:

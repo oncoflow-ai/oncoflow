@@ -6,11 +6,23 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token
 from app.infra.db.models import Assignment, AuditLog, Patient, Study, User
 from app.infra.db.session import create_session_factory
 from app.main import create_app
+
+
+def _fail_audit_flush(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_flush = Session.flush
+
+    def fail_when_auditing(session: Session, *args, **kwargs) -> None:
+        if any(isinstance(value, AuditLog) for value in session.new):
+            raise RuntimeError("audit database unavailable")
+        original_flush(session, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "flush", fail_when_auditing)
 
 
 @pytest.fixture
@@ -216,6 +228,123 @@ def test_create_patient_audit_stores_authenticated_actor(app_and_client, auth_to
             AuditLog.resource_id == response.json()["id"],
         ).one()
         assert event.actor_id == auth_tokens["dr_a"]["id"]
+
+
+def test_create_patient_rolls_back_when_audit_persistence_fails(
+    app_and_client,
+    auth_tokens,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, client = app_and_client
+    _fail_audit_flush(monkeypatch)
+
+    with pytest.raises(RuntimeError, match="audit database unavailable"):
+        client.post(
+            "/api/v1/patients",
+            json={"name": "PAT-AUDIT-ROLLBACK-CREATE"},
+            headers={"Authorization": f"Bearer {auth_tokens['dr_a']['token']}"},
+        )
+
+    with create_session_factory()() as session:
+        assert session.query(Patient).filter(
+            Patient.pseudonym == "PAT-AUDIT-ROLLBACK-CREATE"
+        ).count() == 0
+
+
+def test_update_patient_rolls_back_when_audit_persistence_fails(
+    app_and_client,
+    auth_tokens,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, client = app_and_client
+    headers = {"Authorization": f"Bearer {auth_tokens['admin']['token']}"}
+    created = client.post(
+        "/api/v1/patients",
+        json={"name": "PAT-AUDIT-ROLLBACK-UPDATE", "status": "active"},
+        headers=headers,
+    ).json()
+    _fail_audit_flush(monkeypatch)
+
+    with pytest.raises(RuntimeError, match="audit database unavailable"):
+        client.patch(
+            f"/api/v1/patients/{created['id']}",
+            json={"status": "review"},
+            headers=headers,
+        )
+
+    with create_session_factory()() as session:
+        patient = session.query(Patient).filter(
+            Patient.public_id == UUID(created["id"])
+        ).one()
+        assert patient.status == "active"
+
+
+def test_assign_patient_rolls_back_when_audit_persistence_fails(
+    app_and_client,
+    auth_tokens,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, client = app_and_client
+    headers = {"Authorization": f"Bearer {auth_tokens['admin']['token']}"}
+    patient_id = client.post(
+        "/api/v1/patients",
+        json={"name": "PAT-AUDIT-ROLLBACK-ASSIGN"},
+        headers=headers,
+    ).json()["id"]
+    _fail_audit_flush(monkeypatch)
+
+    with pytest.raises(RuntimeError, match="audit database unavailable"):
+        client.post(
+            f"/api/v1/patients/{patient_id}/assignments",
+            json={"doctorId": auth_tokens["dr_b"]["id"]},
+            headers=headers,
+        )
+
+    with create_session_factory()() as session:
+        patient = session.query(Patient).filter(Patient.public_id == UUID(patient_id)).one()
+        doctor = session.query(User).filter(
+            User.public_id == UUID(auth_tokens["dr_b"]["id"])
+        ).one()
+        assert session.query(Assignment).filter(
+            Assignment.patient_id == patient.id,
+            Assignment.doctor_id == doctor.id,
+        ).count() == 0
+
+
+def test_unassign_patient_rolls_back_when_audit_persistence_fails(
+    app_and_client,
+    auth_tokens,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, client = app_and_client
+    headers = {"Authorization": f"Bearer {auth_tokens['admin']['token']}"}
+    patient_id = client.post(
+        "/api/v1/patients",
+        json={"name": "PAT-AUDIT-ROLLBACK-UNASSIGN"},
+        headers=headers,
+    ).json()["id"]
+    client.post(
+        f"/api/v1/patients/{patient_id}/assignments",
+        json={"doctorId": auth_tokens["dr_b"]["id"]},
+        headers=headers,
+    )
+    _fail_audit_flush(monkeypatch)
+
+    with pytest.raises(RuntimeError, match="audit database unavailable"):
+        client.delete(
+            f"/api/v1/patients/{patient_id}/assignments/{auth_tokens['dr_b']['id']}",
+            headers=headers,
+        )
+
+    with create_session_factory()() as session:
+        patient = session.query(Patient).filter(Patient.public_id == UUID(patient_id)).one()
+        doctor = session.query(User).filter(
+            User.public_id == UUID(auth_tokens["dr_b"]["id"])
+        ).one()
+        assert session.query(Assignment).filter(
+            Assignment.patient_id == patient.id,
+            Assignment.doctor_id == doctor.id,
+        ).count() == 1
 
 
 def test_abac_patient_detail_access(app_and_client, auth_tokens):
