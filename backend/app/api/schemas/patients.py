@@ -4,7 +4,7 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 def to_camel(value: str) -> str:
@@ -36,6 +36,16 @@ class PatientUpdate(CamelModel):
     diagnosis_location: str | None = None
     status: str | None = None
     notes: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_null_required_fields(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            aliases = {"pseudonym", "status"}
+            null_fields = sorted(field for field in aliases if field in value and value[field] is None)
+            if null_fields:
+                raise ValueError(f"{', '.join(null_fields)} cannot be null")
+        return value
 
 
 class AssignedDoctorResponse(CamelModel):

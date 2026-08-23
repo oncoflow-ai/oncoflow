@@ -149,6 +149,7 @@ def list_patients(
     log_audit_event(
         action="LIST_PATIENTS",
         resource_id="patients_list",
+        actor=str(current_user.public_id),
         details={"result_count": len(patients)},
     )
     return [_build_patient_response(p, session) for p in patients]
@@ -160,6 +161,20 @@ def create_patient(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> PatientResponse:
+    doctor_to_assign: User | None = None
+    if payload.assigned_physician_id:
+        if current_user.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only administrators can assign a physician during patient creation",
+            )
+        doctor_to_assign = _find_user(payload.assigned_physician_id, session)
+        if doctor_to_assign.role not in ASSIGNABLE_PATIENT_ROLES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Patient assignments require a doctor, clinician, or radiologist",
+            )
+
     pseudonym = payload.pseudonym or payload.name
     if not pseudonym:
         pseudonym = f"PAT-{uuid4().hex[:6].upper()}"
@@ -186,13 +201,7 @@ def create_patient(
     session.flush()
 
     # Assign doctor if specified or if logged in as doctor
-    doctor_to_assign: User | None = None
-    if payload.assigned_physician_id:
-        try:
-            doctor_to_assign = _find_user(payload.assigned_physician_id, session)
-        except HTTPException:
-            pass
-    elif current_user.role in {"doctor", "clinician", "radiologist"}:
+    if doctor_to_assign is None and not payload.assigned_physician_id and current_user.role in ASSIGNABLE_PATIENT_ROLES:
         doctor_to_assign = current_user
 
     if doctor_to_assign:
@@ -209,6 +218,7 @@ def create_patient(
     log_audit_event(
         action="CREATE_PATIENT",
         resource_id=str(patient.public_id),
+        actor=str(current_user.public_id),
         details={"pseudonym": patient.pseudonym},
     )
 
@@ -266,6 +276,7 @@ def get_patient(
     log_audit_event(
         action="VIEW_PATIENT",
         resource_id=str(patient.public_id),
+        actor=str(current_user.public_id),
         details={"studies_count": len(study_items)},
     )
 
@@ -286,20 +297,9 @@ def update_patient(
     patient = _find_patient(patient_id, session)
     verify_patient_access(patient, current_user, session)
 
-    if payload.pseudonym is not None:
-        patient.pseudonym = payload.pseudonym
-    if payload.dob is not None:
-        patient.dob = payload.dob
-    if payload.gender is not None:
-        patient.gender = payload.gender
-    if payload.diagnosis is not None:
-        patient.diagnosis = payload.diagnosis
-    if payload.diagnosis_location is not None:
-        patient.diagnosis_location = payload.diagnosis_location
-    if payload.status is not None:
-        patient.status = payload.status
-    if payload.notes is not None:
-        patient.notes = payload.notes
+    updates = payload.model_dump(exclude_unset=True)
+    for field, value in updates.items():
+        setattr(patient, field, value)
 
     session.commit()
     session.refresh(patient)
@@ -307,7 +307,8 @@ def update_patient(
     log_audit_event(
         action="UPDATE_PATIENT",
         resource_id=str(patient.public_id),
-        details={"updated_fields": list(payload.model_dump(exclude_unset=True).keys())},
+        actor=str(current_user.public_id),
+        details={"updated_fields": list(updates.keys())},
     )
 
     return _build_patient_response(patient, session)
@@ -360,6 +361,7 @@ def assign_doctor_to_patient(
     log_audit_event(
         action="ASSIGN_DOCTOR",
         resource_id=str(patient.public_id),
+        actor=str(current_user.public_id),
         details={"doctor_public_id": str(doctor.public_id), "doctor_name": doctor.name},
     )
 
@@ -399,6 +401,7 @@ def remove_doctor_assignment(
         log_audit_event(
             action="UNASSIGN_DOCTOR",
             resource_id=str(patient.public_id),
+            actor=str(current_user.public_id),
             details={"doctor_public_id": str(doctor.public_id)},
         )
 
