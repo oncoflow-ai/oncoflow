@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+from datetime import datetime, timezone
+from uuid import uuid4
 
 import sqlalchemy as sa
 
@@ -66,3 +68,50 @@ def test_patient_migration_round_trip_on_fresh_sqlite(tmp_path: Path) -> None:
 
     command.upgrade(config, "head")
     _assert_patient_schema(database_path)
+
+
+def test_patient_migration_backfills_legacy_studies(tmp_path: Path) -> None:
+    database_path = tmp_path / "legacy-migration.sqlite3"
+    config = _alembic_config(database_path)
+    command.upgrade(config, "f61c96c5c275")
+
+    engine = sa.create_engine(f"sqlite:///{database_path}")
+    metadata = sa.MetaData()
+    studies = sa.Table("studies", metadata, autoload_with=engine)
+    legacy_patient_id = uuid4().hex
+    now = datetime.now(timezone.utc)
+    with engine.begin() as connection:
+        connection.execute(
+            studies.insert(),
+            [
+                {
+                    "public_id": uuid4().hex,
+                    "patient_public_id": legacy_patient_id,
+                    "study_instance_uid": f"legacy-{index}",
+                    "source_kind": "nifti-upload",
+                    "source_metadata": {},
+                    "staging_status": "staged",
+                    "created_at": now,
+                    "updated_at": now,
+                }
+                for index in range(2)
+            ],
+        )
+    engine.dispose()
+
+    command.upgrade(config, "head")
+    engine = sa.create_engine(f"sqlite:///{database_path}")
+    metadata = sa.MetaData()
+    patients = sa.Table("patients", metadata, autoload_with=engine)
+    studies = sa.Table("studies", metadata, autoload_with=engine)
+    with engine.connect() as connection:
+        patient_rows = connection.execute(
+            sa.select(patients).where(patients.c.public_id == legacy_patient_id)
+        ).mappings().all()
+        study_rows = connection.execute(
+            sa.select(studies).where(studies.c.patient_public_id == legacy_patient_id)
+        ).mappings().all()
+
+    assert len(patient_rows) == 1
+    assert {row["patient_id"] for row in study_rows} == {patient_rows[0]["id"]}
+    engine.dispose()

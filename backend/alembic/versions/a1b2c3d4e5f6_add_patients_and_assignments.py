@@ -6,6 +6,7 @@ Create Date: 2026-08-18 14:20:00.000000
 
 """
 from typing import Sequence, Union
+from datetime import datetime, timezone
 
 from alembic import op
 import sqlalchemy as sa
@@ -66,6 +67,54 @@ def upgrade() -> None:
             'fk_studies_patient_id', 'patients', ['patient_id'], ['id']
         )
         batch_op.create_index(op.f('ix_studies_patient_id'), ['patient_id'], unique=False)
+
+    # 4. Canonicalize every legacy study's patient_public_id into patients and
+    # link all studies sharing that identifier to the same patient row.
+    bind = op.get_bind()
+    metadata = sa.MetaData()
+    patients = sa.Table('patients', metadata, autoload_with=bind)
+    studies = sa.Table('studies', metadata, autoload_with=bind)
+    legacy_studies = bind.execute(
+        sa.select(
+            studies.c.id,
+            studies.c.patient_public_id,
+            studies.c.created_at,
+            studies.c.updated_at,
+        ).where(studies.c.patient_id.is_(None))
+    ).mappings().all()
+
+    patient_ids_by_public_id: dict[object, int] = {}
+    for study in legacy_studies:
+        public_id = study['patient_public_id']
+        if public_id is None:
+            continue
+        patient_id = patient_ids_by_public_id.get(public_id)
+        if patient_id is None:
+            existing_id = bind.execute(
+                sa.select(patients.c.id).where(patients.c.public_id == public_id)
+            ).scalar_one_or_none()
+            if existing_id is None:
+                created_at = study['created_at'] or datetime.now(timezone.utc)
+                updated_at = study['updated_at'] or created_at
+                result = bind.execute(
+                    patients.insert().values(
+                        public_id=public_id,
+                        pseudonym=f"LEGACY-{public_id}",
+                        status='active',
+                        created_at=created_at,
+                        updated_at=updated_at,
+                    )
+                )
+                patient_id = int(result.inserted_primary_key[0])
+            else:
+                patient_id = int(existing_id)
+            patient_ids_by_public_id[public_id] = patient_id
+
+        bind.execute(
+            studies.update()
+            .where(studies.c.id == study['id'])
+            .values(patient_id=patient_id)
+        )
 
 
 def downgrade() -> None:
