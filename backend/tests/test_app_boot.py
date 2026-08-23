@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from uuid import uuid4
+import pytest
 
 from app.modules.jobs.contracts import ProcessingJobContract, StagedStudyReference
 from app.main import PhiSafeLogFilter
@@ -61,9 +62,18 @@ def test_job_contracts_are_importable() -> None:
     assert running_contract.stage == "validate"
 
 
-def test_demo_bootstrap_is_disabled_without_development_opt_in(monkeypatch) -> None:
-    monkeypatch.setenv("ONCOFLOW_ENVIRONMENT", "production")
-    monkeypatch.delenv("ONCOFLOW_BOOTSTRAP_DEMO_DATA", raising=False)
+@pytest.mark.parametrize(
+    ("environment", "opt_in"),
+    [("production", "true"), ("test", "true"), ("development", None)],
+)
+def test_demo_bootstrap_is_disabled_without_development_opt_in(
+    monkeypatch, environment: str, opt_in: str | None
+) -> None:
+    monkeypatch.setenv("ONCOFLOW_ENVIRONMENT", environment)
+    if opt_in is None:
+        monkeypatch.delenv("ONCOFLOW_BOOTSTRAP_DEMO_DATA", raising=False)
+    else:
+        monkeypatch.setenv("ONCOFLOW_BOOTSTRAP_DEMO_DATA", opt_in)
     from app.core.config import get_settings
     from app.main import create_app
 
