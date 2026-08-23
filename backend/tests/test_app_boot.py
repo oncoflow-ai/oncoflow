@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from uuid import uuid4
+import pytest
 
 from app.modules.jobs.contracts import ProcessingJobContract, StagedStudyReference
 from app.main import PhiSafeLogFilter
+from app.infra.db.models import Patient, User
+from app.infra.db.session import create_session_factory
+from fastapi.testclient import TestClient
 
 
 def test_app_exposes_health_and_readiness_routes(client) -> None:
@@ -56,3 +60,27 @@ def test_job_contracts_are_importable() -> None:
     assert running_contract.study.storage_key == "staging/study-1"
     assert running_contract.status == "running"
     assert running_contract.stage == "validate"
+
+
+@pytest.mark.parametrize(
+    ("environment", "opt_in"),
+    [("production", "true"), ("test", "true"), ("development", None)],
+)
+def test_demo_bootstrap_is_disabled_without_development_opt_in(
+    monkeypatch, environment: str, opt_in: str | None
+) -> None:
+    monkeypatch.setenv("ONCOFLOW_ENVIRONMENT", environment)
+    if opt_in is None:
+        monkeypatch.delenv("ONCOFLOW_BOOTSTRAP_DEMO_DATA", raising=False)
+    else:
+        monkeypatch.setenv("ONCOFLOW_BOOTSTRAP_DEMO_DATA", opt_in)
+    from app.core.config import get_settings
+    from app.main import create_app
+
+    get_settings.cache_clear()
+    with TestClient(create_app()):
+        pass
+
+    with create_session_factory()() as session:
+        assert session.query(User).count() == 0
+        assert session.query(Patient).count() == 0

@@ -541,6 +541,91 @@ def test_admin_cannot_assign_non_clinical_roles(app_and_client, auth_tokens, tar
         assert session.query(Assignment).count() == 0
 
 
+def test_non_admin_cannot_assign_another_physician_during_creation(app_and_client, auth_tokens):
+    _, client = app_and_client
+    response = client.post(
+        "/api/v1/patients",
+        json={
+            "name": "PAT-CREATE-ASSIGN-BYPASS",
+            "assignedPhysicianId": auth_tokens["dr_b"]["id"],
+        },
+        headers={"Authorization": f"Bearer {auth_tokens['dr_a']['token']}"},
+    )
+
+    assert response.status_code == 403
+    with create_session_factory()() as session:
+        assert session.query(Patient).filter(
+            Patient.pseudonym == "PAT-CREATE-ASSIGN-BYPASS"
+        ).count() == 0
+
+
+def test_create_patient_validates_explicit_assignment_target(app_and_client, auth_tokens):
+    _, client = app_and_client
+    headers = {"Authorization": f"Bearer {auth_tokens['admin']['token']}"}
+
+    invalid_role = client.post(
+        "/api/v1/patients",
+        json={"name": "PAT-INVALID-CREATE-TARGET", "assignedPhysicianId": auth_tokens["researcher"]["id"]},
+        headers=headers,
+    )
+    missing_user = client.post(
+        "/api/v1/patients",
+        json={"name": "PAT-MISSING-CREATE-TARGET", "assignedPhysicianId": str(uuid4())},
+        headers=headers,
+    )
+
+    assert invalid_role.status_code == 422
+    assert missing_user.status_code == 404
+
+
+def test_update_patient_can_clear_nullable_fields_but_rejects_null_required_fields(
+    app_and_client, auth_tokens
+):
+    _, client = app_and_client
+    headers = {"Authorization": f"Bearer {auth_tokens['admin']['token']}"}
+    patient_id = client.post(
+        "/api/v1/patients",
+        json={"name": "PAT-CLEAR-NULLABLE", "diagnosis": "initial", "notes": "initial"},
+        headers=headers,
+    ).json()["id"]
+
+    cleared = client.patch(
+        f"/api/v1/patients/{patient_id}",
+        json={"diagnosis": None, "notes": None},
+        headers=headers,
+    )
+    null_pseudonym = client.patch(
+        f"/api/v1/patients/{patient_id}", json={"pseudonym": None}, headers=headers
+    )
+    null_status = client.patch(
+        f"/api/v1/patients/{patient_id}", json={"status": None}, headers=headers
+    )
+
+    assert cleared.status_code == 200
+    assert cleared.json()["diagnosis"] is None
+    assert cleared.json()["notes"] is None
+    assert null_pseudonym.status_code == 422
+    assert null_status.status_code == 422
+
+
+def test_patient_request_audit_passes_explicit_actor(app_and_client, auth_tokens, monkeypatch):
+    _, client = app_and_client
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        "app.api.routes.patients.log_audit_event",
+        lambda **kwargs: captured.append(kwargs),
+    )
+
+    response = client.post(
+        "/api/v1/patients",
+        json={"name": "PAT-AUDIT-ACTOR"},
+        headers={"Authorization": f"Bearer {auth_tokens['dr_a']['token']}"},
+    )
+
+    assert response.status_code == 201
+    assert captured[-1]["actor"] == auth_tokens["dr_a"]["id"]
+
+
 def test_update_patient(app_and_client, auth_tokens):
     _, client = app_and_client
     headers_admin = {"Authorization": f"Bearer {auth_tokens['admin']['token']}"}
