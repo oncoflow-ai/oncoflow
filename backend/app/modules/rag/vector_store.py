@@ -11,7 +11,7 @@ from app.modules.rag.contracts import DocumentChunk, RetrievedChunk
 
 class InMemoryVectorStore:
     """Per-tenant isolated in-memory vector store for patient clinical documents and summaries.
-    
+
     Adheres strictly to the security requirement: queries for patient A are strictly isolated
     from patient B's indices.
     """

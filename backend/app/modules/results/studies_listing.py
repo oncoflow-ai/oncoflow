@@ -28,7 +28,6 @@ def list_studies(*, current_user: User) -> list[StudyListItem]:
             assigned_patient_ids = (
                 session.query(Assignment.patient_id)
                 .filter(Assignment.doctor_id == current_user.id)
-                .scalar_subquery()
             )
             query = query.filter(Study.patient_id.in_(assigned_patient_ids))
         studies = query.order_by(Study.created_at.desc()).all()

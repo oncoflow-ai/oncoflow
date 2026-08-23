@@ -4,12 +4,13 @@ import asyncio
 import io
 import zipfile
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.infra.db.models import Artifact, Assignment, Job, Patient, Study
+from app.infra.db.models import Artifact, Assignment, AuditLog, Job, Patient, Study, User
 from app.infra.db.session import create_session_factory
 from app.modules.jobs.service import JobService
 from app.modules.jobs.state_machine import transition_job
@@ -18,7 +19,6 @@ from app.modules.jobs.worker_tasks import (
     execute_demo_mri_segmentation_job,
 )
 from app.api.deps import get_current_user
-from app.infra.db.models import User
 
 
 def _zip_bytes(files: dict[str, bytes]) -> bytes:
@@ -115,11 +115,9 @@ def test_ingestion_rejects_inaccessible_existing_patient_without_db_side_effects
             "jobs": session.query(Job).count(),
         }
     storage_root = Path(get_settings().storage_root)
-    baseline_storage_paths = (
-        {path.relative_to(storage_root) for path in storage_root.rglob("*")}
-        if storage_root.exists()
-        else set()
-    )
+    baseline_storage_entries = {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    }
 
     client.app.dependency_overrides[get_current_user] = lambda: clinician
     response = client.post(endpoint, files=files, data={"patient_id": patient_id})
@@ -130,12 +128,9 @@ def test_ingestion_rejects_inaccessible_existing_patient_without_db_side_effects
         assert session.query(Assignment).count() == baseline_counts["assignments"]
         assert session.query(Study).count() == baseline_counts["studies"]
         assert session.query(Job).count() == baseline_counts["jobs"]
-    current_storage_paths = (
-        {path.relative_to(storage_root) for path in storage_root.rglob("*")}
-        if storage_root.exists()
-        else set()
-    )
-    assert current_storage_paths == baseline_storage_paths
+    assert {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    } == baseline_storage_entries
 
 
 def test_ingestion_allows_assigned_clinician_for_existing_patient(client) -> None:
@@ -167,21 +162,49 @@ def test_ingestion_allows_assigned_clinician_for_existing_patient(client) -> Non
         assert session.query(Assignment).filter(Assignment.patient_id == patient.id).count() == 1
 
 
-def test_ingestion_rejects_unknown_explicit_patient_without_creating_one(client) -> None:
+@pytest.mark.parametrize(
+    ("endpoint", "files"),
+    [
+        (
+            "/api/v1/jobs/mri-ingestion",
+            {"study_archive": ("exam.zip", _zip_bytes({"exam/file.dcm": b"dicom"}), "application/zip")},
+        ),
+        (
+            "/api/v1/jobs/nifti-segmentation",
+            {"scan_file": ("scan.nii.gz", b"nifti-bytes", "application/gzip")},
+        ),
+        (
+            "/api/v1/jobs/demo-mri-segmentation",
+            {"scan_file": ("demo.nii.gz", b"demo-bytes", "application/gzip")},
+        ),
+    ],
+)
+def test_ingestion_rejects_unknown_explicit_patient_without_creating_one(
+    client,
+    endpoint: str,
+    files: dict,
+) -> None:
     assert client.get("/api/v1/health").status_code == 200
     session_factory = create_session_factory()
     with session_factory() as session:
         baseline_patient_count = session.query(Patient).count()
+    storage_root = Path(get_settings().storage_root)
+    baseline_storage_entries = {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    }
 
     response = client.post(
-        "/api/v1/jobs/demo-mri-segmentation",
-        files={"scan_file": ("demo.nii.gz", b"demo-bytes", "application/gzip")},
+        endpoint,
+        files=files,
         data={"patient_id": "PAT-DOES-NOT-EXIST"},
     )
 
     assert response.status_code == 404
     with session_factory() as session:
         assert session.query(Patient).count() == baseline_patient_count
+    assert {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    } == baseline_storage_entries
 
 
 def test_post_mri_ingestion_stages_archive_and_returns_queued_job(client) -> None:
@@ -227,26 +250,124 @@ def test_post_mri_ingestion_rejects_invalid_payloads(client, files, expected_sta
     assert response.status_code == expected_status
 
 
-def test_invalid_mri_archive_does_not_leave_staged_files(client) -> None:
+def test_invalid_zip_cleanup_leaves_no_raw_study_directory(client) -> None:
     storage_root = Path(get_settings().storage_root)
-    baseline_paths = (
-        {path.relative_to(storage_root) for path in storage_root.rglob("*")}
-        if storage_root.exists()
-        else set()
-    )
+    baseline_storage_entries = {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    }
 
     response = client.post(
         "/api/v1/jobs/mri-ingestion",
-        files={"study_archive": ("broken.zip", b"not-a-zip", "application/zip")},
+        files={"study_archive": ("invalid.zip", b"not-a-zip", "application/zip")},
     )
 
-    current_paths = (
-        {path.relative_to(storage_root) for path in storage_root.rglob("*")}
-        if storage_root.exists()
-        else set()
-    )
     assert response.status_code == 400
-    assert current_paths == baseline_paths
+    assert {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    } == baseline_storage_entries
+
+
+def test_nifti_database_failure_cleans_up_raw_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage_root = Path(get_settings().storage_root)
+    baseline_storage_entries = {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    }
+    original_commit = Session.commit
+
+    def fail_study_commit(session: Session) -> None:
+        if any(isinstance(value, Study) for value in session.identity_map.values()):
+            raise RuntimeError("database unavailable")
+        original_commit(session)
+
+    monkeypatch.setattr(Session, "commit", fail_study_commit)
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        asyncio.run(JobService().submit_nifti_study(
+            scan_filename="scan.nii.gz",
+            scan_bytes=b"nifti-bytes",
+            mask_filename=None,
+            mask_bytes=None,
+            source_label="failure cleanup",
+            acquired_at=None,
+        ))
+
+    assert {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    } == baseline_storage_entries
+    with create_session_factory()() as session:
+        assert session.query(Study).count() == 0
+
+
+@pytest.mark.parametrize("submission_kind", ["dicom", "nifti", "demo"])
+def test_study_audit_failure_rolls_back_mutation_and_cleans_raw_files(
+    submission_kind: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage_root = Path(get_settings().storage_root)
+    baseline_storage_entries = {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    }
+    with create_session_factory()() as session:
+        admin = User(
+            email="study-audit-admin@test.local",
+            name="Study Audit Admin",
+            hashed_password="hash",
+            role="admin",
+        )
+        session.add(admin)
+        session.commit()
+        session.refresh(admin)
+        session.expunge(admin)
+
+    original_flush = Session.flush
+
+    def fail_when_auditing(session: Session, *args, **kwargs) -> None:
+        if any(isinstance(value, AuditLog) for value in session.new):
+            raise RuntimeError("audit database unavailable")
+        original_flush(session, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "flush", fail_when_auditing)
+
+    service = JobService()
+    if submission_kind == "dicom":
+        submission = service.submit_mri_study(
+            filename="study.zip",
+            content_type="application/zip",
+            archive_bytes=_zip_bytes({"exam/file.dcm": b"dicom"}),
+            source_label="audit failure cleanup",
+            current_user=admin,
+        )
+    elif submission_kind == "nifti":
+        submission = service.submit_nifti_study(
+            scan_filename="scan.nii.gz",
+            scan_bytes=b"nifti-bytes",
+            mask_filename=None,
+            mask_bytes=None,
+            source_label="audit failure cleanup",
+            acquired_at=None,
+            current_user=admin,
+        )
+    else:
+        submission = service.submit_demo_mri_segmentation(
+            scan_filename="demo.nii.gz",
+            scan_bytes=b"demo-bytes",
+            content_type="application/gzip",
+            source_label="audit failure cleanup",
+            acquired_at=None,
+            current_user=admin,
+        )
+
+    with pytest.raises(RuntimeError, match="audit database unavailable"):
+        asyncio.run(submission)
+
+    assert {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    } == baseline_storage_entries
+    with create_session_factory()() as session:
+        assert session.query(Study).count() == 0
+        assert session.query(AuditLog).filter(AuditLog.action == "CREATE_STUDY").count() == 0
 
 
 def test_submission_dispatches_identifiers_not_raw_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -328,65 +449,61 @@ def test_get_job_status_returns_failure_payload(client) -> None:
     assert body["error"]["code"] == "conversion-error"
 
 
-def test_job_status_rejects_user_unassigned_from_owning_patient(client) -> None:
-    assert client.get("/api/v1/health").status_code == 200
-    session_factory = create_session_factory()
-    with session_factory() as session:
-        clinician = User(email="job-outsider@test.local", name="Outsider", hashed_password="hash", role="clinician")
-        patient = Patient(pseudonym="PAT-JOB-OWNER", status="active")
-        session.add_all([clinician, patient])
-        session.flush()
-        study = Study(
-            patient_id=patient.id,
-            patient_public_id=patient.public_id,
-            study_instance_uid="job-auth-study",
-            source_kind="nifti-upload",
-            source_metadata={},
-            staging_status="staged",
+def test_get_job_status_rejects_unassigned_clinician(client) -> None:
+    archive_bytes = _zip_bytes({"exam/file1.dcm": b"dicom"})
+    submitted = client.post(
+        "/api/v1/jobs/mri-ingestion",
+        files={"study_archive": ("exam.zip", archive_bytes, "application/zip")},
+    ).json()
+    with create_session_factory()() as session:
+        outsider = User(
+            email="job-outsider@test.local",
+            name="Job Outsider",
+            hashed_password="hash",
+            role="clinician",
         )
-        session.add(study)
-        session.flush()
-        job = Job(study_id=study.id, job_type="ingest-nifti", status="queued", stage="staged")
-        session.add(job)
+        session.add(outsider)
         session.commit()
-        job_id = str(job.public_id)
 
-    client.app.dependency_overrides[get_current_user] = lambda: clinician
-    response = client.get(f"/api/v1/jobs/{job_id}")
+    client.app.dependency_overrides[get_current_user] = lambda: outsider
+    response = client.get(f"/api/v1/jobs/{submitted['jobId']}")
 
     assert response.status_code == 403
 
 
-def test_comparison_requires_authorized_same_patient_studies(client, monkeypatch) -> None:
-    assert client.get("/api/v1/health").status_code == 200
-    session_factory = create_session_factory()
-    with session_factory() as session:
-        clinician = User(email="comparison-clinician@test.local", name="Clinician", hashed_password="hash", role="clinician")
-        patient_a = Patient(pseudonym="PAT-COMP-A", status="active")
-        patient_b = Patient(pseudonym="PAT-COMP-B", status="active")
-        session.add_all([clinician, patient_a, patient_b])
+def test_comparison_rejects_studies_from_different_patients(client) -> None:
+    with create_session_factory()() as session:
+        patients = [Patient(pseudonym=f"PAT-COMP-{index}") for index in (1, 2)]
+        session.add_all(patients)
         session.flush()
-        session.add(Assignment(doctor_id=clinician.id, patient_id=patient_a.id))
-        study_a = Study(patient_id=patient_a.id, patient_public_id=patient_a.public_id, study_instance_uid="comp-a", source_kind="nifti-upload", source_metadata={}, staging_status="staged")
-        study_b = Study(patient_id=patient_b.id, patient_public_id=patient_b.public_id, study_instance_uid="comp-b", source_kind="nifti-upload", source_metadata={}, staging_status="staged")
-        session.add_all([study_a, study_b])
+        studies = []
+        for index, patient in enumerate(patients, start=1):
+            study = Study(
+                public_id=uuid4(),
+                patient_id=patient.id,
+                patient_public_id=patient.public_id,
+                study_instance_uid=f"comparison-cross-patient-{index}",
+                source_kind="nifti",
+                staging_status="staged",
+            )
+            session.add(study)
+            session.flush()
+            session.add(Artifact(
+                study_id=study.id,
+                artifact_kind="nifti-source",
+                storage_root="raw",
+                relative_path=f"cross-patient/{index}.nii.gz",
+            ))
+            studies.append(str(study.public_id))
         session.commit()
-        ids = (str(study_a.public_id), str(study_b.public_id))
 
-    monkeypatch.setattr(
-        "app.api.routes.jobs.run_longitudinal_comparison",
-        lambda **_: pytest.fail("comparison must not run before authorization"),
+    response = client.post(
+        "/api/v1/jobs/longitudinal-comparison",
+        json={"baselineStudyId": studies[0], "followupStudyId": studies[1]},
     )
-    payload = {"baselineStudyId": ids[0], "followupStudyId": ids[1]}
-    client.app.dependency_overrides[get_current_user] = lambda: clinician
-    unauthorized = client.post("/api/v1/jobs/longitudinal-comparison", json=payload)
-    client.app.dependency_overrides[get_current_user] = lambda: User(
-        id="admin-test", email="admin@test.local", name="Admin", role="admin"
-    )
-    cross_patient = client.post("/api/v1/jobs/longitudinal-comparison", json=payload)
 
-    assert unauthorized.status_code == 403
-    assert cross_patient.status_code == 422
+    assert response.status_code == 422
+    assert response.json()["detail"] == "studies must belong to the same patient"
 
 
 def test_invalid_state_transition_is_rejected() -> None:

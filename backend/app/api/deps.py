@@ -8,7 +8,6 @@ from typing import Generator
 from app.core.config import get_settings
 from app.infra.db.session import create_session_factory
 from app.infra.db.models import User, Patient, Assignment, Study
-from app.core.audit import current_actor
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 optional_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
@@ -48,9 +47,6 @@ def get_current_user(
     if user is None:
         raise credentials_exception
         
-    # Inject into context var for audit logging
-    current_actor.set(str(user.public_id))
-    
     return user
 
 
@@ -68,8 +64,6 @@ def get_optional_current_user(
             return None
         user_uuid = UUID(user_id_str)
         user = session.query(User).filter(User.public_id == user_uuid).first()
-        if user:
-            current_actor.set(str(user.public_id))
         return user
     except Exception:
         return None
@@ -96,40 +90,24 @@ def verify_patient_access(
         )
 
 
-def resolve_study_patient(study: Study, session: Session) -> Patient:
+def verify_study_access(
+    study: Study,
+    user: User,
+    session: Session,
+) -> None:
+    """Verify access to the patient who owns a study."""
+    if user.role == "admin":
+        return
+
     patient = None
     if study.patient_id is not None:
         patient = session.query(Patient).filter(Patient.id == study.patient_id).one_or_none()
     if patient is None:
-        patient = session.query(Patient).filter(
-            Patient.public_id == study.patient_public_id
-        ).one_or_none()
-    if patient is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Patient for study not found",
+        patient = (
+            session.query(Patient)
+            .filter(Patient.public_id == study.patient_public_id)
+            .one_or_none()
         )
-    return patient
-
-
-def verify_study_access(study: Study, user: User, session: Session) -> Patient:
-    patient = resolve_study_patient(study, session)
-    verify_patient_access(patient, user, session)
-    return patient
-
-
-def find_study_for_access(
-    study_id: str,
-    user: User,
-    session: Session,
-    *,
-    invalid_status_code: int = status.HTTP_404_NOT_FOUND,
-) -> tuple[Study, Patient]:
-    try:
-        parsed = UUID(study_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=invalid_status_code, detail="study not found") from exc
-    study = session.query(Study).filter(Study.public_id == parsed).one_or_none()
-    if study is None:
+    if patient is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="study not found")
-    return study, verify_study_access(study, user, session)
+    verify_patient_access(patient, user, session)

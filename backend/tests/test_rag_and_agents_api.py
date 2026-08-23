@@ -3,12 +3,18 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.config import get_settings
+from app.infra.db.session import get_engine
 from app.main import bootstrap_users, create_app
 
 
 @pytest.fixture
 def auth_client(monkeypatch):
     monkeypatch.setenv("ONCOFLOW_DATABASE_URL", "sqlite:///:memory:")
+    monkeypatch.setenv("ONCOFLOW_ENVIRONMENT", "development")
+    monkeypatch.setenv("ONCOFLOW_SEED_DEMO_DATA", "true")
+    get_settings.cache_clear()
+    get_engine.cache_clear()
     app = create_app()
     bootstrap_users()
 

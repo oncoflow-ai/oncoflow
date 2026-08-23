@@ -5,8 +5,9 @@ Revises: f61c96c5c275
 Create Date: 2026-08-18 14:20:00.000000
 
 """
-from typing import Sequence, Union
 from datetime import datetime, timezone
+from typing import Sequence, Union
+from uuid import UUID
 
 from alembic import op
 import sqlalchemy as sa
@@ -21,6 +22,65 @@ depends_on: Union[str, Sequence[str], None] = None
 SQLITE_BATCH_NAMING_CONVENTION = {
     "fk": "fk_%(table_name)s_%(column_0_name)s",
 }
+
+
+def _backfill_study_patients() -> None:
+    """Create one patient per legacy identifier and link every existing study."""
+    bind = op.get_bind()
+    studies = sa.table(
+        "studies",
+        sa.column("id", sa.Integer()),
+        sa.column("patient_public_id", sa.Uuid()),
+        sa.column("patient_id", sa.Integer()),
+    )
+    patients = sa.table(
+        "patients",
+        sa.column("id", sa.Integer()),
+        sa.column("public_id", sa.Uuid()),
+        sa.column("pseudonym", sa.String()),
+        sa.column("status", sa.String()),
+        sa.column("created_at", sa.DateTime(timezone=True)),
+        sa.column("updated_at", sa.DateTime(timezone=True)),
+    )
+
+    legacy_ids = {
+        UUID(str(value))
+        for value in bind.execute(
+            sa.select(studies.c.patient_public_id).where(
+                studies.c.patient_public_id.is_not(None)
+            )
+        ).scalars()
+    }
+    now = datetime.now(timezone.utc)
+    for public_id in sorted(legacy_ids, key=str):
+        bind.execute(
+            patients.insert().values(
+                public_id=public_id,
+                pseudonym=f"MIG-{public_id}",
+                status="active",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+    patient_rows = bind.execute(
+        sa.select(patients.c.id, patients.c.public_id)
+    ).all()
+    patient_ids = {UUID(str(row.public_id)): row.id for row in patient_rows}
+    for public_id in legacy_ids:
+        bind.execute(
+            studies.update()
+            .where(studies.c.patient_public_id == public_id)
+            .values(patient_id=patient_ids[public_id])
+        )
+
+    orphan_count = bind.scalar(
+        sa.select(sa.func.count())
+        .select_from(studies)
+        .where(studies.c.patient_public_id.is_not(None), studies.c.patient_id.is_(None))
+    )
+    if orphan_count:
+        raise RuntimeError(f"patient backfill left {orphan_count} studies unlinked")
 
 
 def upgrade() -> None:
@@ -68,53 +128,8 @@ def upgrade() -> None:
         )
         batch_op.create_index(op.f('ix_studies_patient_id'), ['patient_id'], unique=False)
 
-    # 4. Canonicalize every legacy study's patient_public_id into patients and
-    # link all studies sharing that identifier to the same patient row.
-    bind = op.get_bind()
-    metadata = sa.MetaData()
-    patients = sa.Table('patients', metadata, autoload_with=bind)
-    studies = sa.Table('studies', metadata, autoload_with=bind)
-    legacy_studies = bind.execute(
-        sa.select(
-            studies.c.id,
-            studies.c.patient_public_id,
-            studies.c.created_at,
-            studies.c.updated_at,
-        ).where(studies.c.patient_id.is_(None))
-    ).mappings().all()
-
-    patient_ids_by_public_id: dict[object, int] = {}
-    for study in legacy_studies:
-        public_id = study['patient_public_id']
-        if public_id is None:
-            continue
-        patient_id = patient_ids_by_public_id.get(public_id)
-        if patient_id is None:
-            existing_id = bind.execute(
-                sa.select(patients.c.id).where(patients.c.public_id == public_id)
-            ).scalar_one_or_none()
-            if existing_id is None:
-                created_at = study['created_at'] or datetime.now(timezone.utc)
-                updated_at = study['updated_at'] or created_at
-                result = bind.execute(
-                    patients.insert().values(
-                        public_id=public_id,
-                        pseudonym=f"LEGACY-{public_id}",
-                        status='active',
-                        created_at=created_at,
-                        updated_at=updated_at,
-                    )
-                )
-                patient_id = int(result.inserted_primary_key[0])
-            else:
-                patient_id = int(existing_id)
-            patient_ids_by_public_id[public_id] = patient_id
-
-        bind.execute(
-            studies.update()
-            .where(studies.c.id == study['id'])
-            .values(patient_id=patient_id)
-        )
+    # 4. Materialize the legacy study identifier as the canonical patient relation.
+    _backfill_study_patients()
 
 
 def downgrade() -> None:

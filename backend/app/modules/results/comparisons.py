@@ -12,14 +12,16 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
+from app.api.deps import verify_patient_access
 from app.core.config import get_settings
-from app.infra.db.models import Artifact, Study
+from app.infra.db.models import Artifact, Comparison, Patient, Study, User
 from app.infra.db.session import create_session_factory
 from app.modules.artifacts.storage import resolve_artifact_location
 
@@ -35,13 +37,15 @@ class ComparisonError(Exception):
 
 @dataclass(frozen=True)
 class _StudyAssets:
+    internal_id: int
+    patient_id: int
     public_id: str
     scan_absolute_path: Path
     mask_absolute_path: Path | None
     acquired_at: date | None
 
 
-def _resolve_study_assets(session, study_public_id: str) -> _StudyAssets:
+def _resolve_study_assets(session, study_public_id: str, current_user: User) -> _StudyAssets:
     try:
         parsed = UUID(study_public_id)
     except ValueError as exc:
@@ -50,6 +54,15 @@ def _resolve_study_assets(session, study_public_id: str) -> _StudyAssets:
     study = session.query(Study).filter(Study.public_id == parsed).one_or_none()
     if study is None:
         raise ComparisonError(404, f"study not found: {study_public_id}")
+
+    patient = (
+        session.query(Patient).filter(Patient.id == study.patient_id).one_or_none()
+        if study.patient_id is not None
+        else None
+    )
+    if patient is None:
+        raise ComparisonError(404, f"study not found: {study_public_id}")
+    verify_patient_access(patient, current_user, session)
 
     scan_artifact = (
         session.query(Artifact)
@@ -87,6 +100,8 @@ def _resolve_study_assets(session, study_public_id: str) -> _StudyAssets:
     )
 
     return _StudyAssets(
+        internal_id=study.id,
+        patient_id=patient.id,
         public_id=str(study.public_id),
         scan_absolute_path=Path(scan_location.absolute_path),
         mask_absolute_path=(
@@ -94,6 +109,7 @@ def _resolve_study_assets(session, study_public_id: str) -> _StudyAssets:
         ),
         acquired_at=study.acquired_at,
     )
+
 
 
 def _build_inference_config():
@@ -121,14 +137,17 @@ def run_longitudinal_comparison(
     *,
     baseline_study_id: str,
     followup_study_id: str,
+    current_user: User,
 ) -> dict[str, Any]:
     if baseline_study_id == followup_study_id:
         raise ComparisonError(400, "baseline and follow-up study IDs must differ")
 
     session_factory = create_session_factory()
     with session_factory() as session:
-        baseline = _resolve_study_assets(session, baseline_study_id)
-        followup = _resolve_study_assets(session, followup_study_id)
+        baseline = _resolve_study_assets(session, baseline_study_id, current_user)
+        followup = _resolve_study_assets(session, followup_study_id, current_user)
+        if baseline.patient_id != followup.patient_id:
+            raise ComparisonError(422, "studies must belong to the same patient")
 
     settings = get_settings()
     comparison_id = str(uuid4())
@@ -204,6 +223,36 @@ def run_longitudinal_comparison(
         "did_resegment": bool(metrics.get("did_resegment", False)),
     }
 
+    try:
+        with session_factory() as session:
+            db_comparison = Comparison(
+                public_id=UUID(comparison_id),
+                study_a_id=baseline.internal_id,
+                study_b_id=followup.internal_id,
+                volume_a=metrics_payload["volume_a_cm3"],
+                volume_b=metrics_payload["volume_b_cm3"],
+                delta_cm3=metrics_payload["delta_cm3"],
+                pct_change=metrics_payload["pct_change"],
+                dice_overlap=metrics_payload["dice_overlap"],
+                hd95_mm=metrics_payload["hd95_mm"],
+                growth_rate_cm3_per_day=metrics_payload["growth_rate_cm3_per_day"],
+                interpretation_flag=(
+                    interpretation.get("label")
+                    if isinstance(interpretation, dict)
+                    else None
+                ),
+                recist_ratio=metrics_payload["recist_ratio"],
+                vol_delta_ci_half_cm3=metrics_payload["vol_delta_ci_half_cm3"],
+                registration_ncc=metrics_payload["registration_ncc"],
+                comparison_metadata=summary,
+            )
+            session.add(db_comparison)
+            session.commit()
+    except Exception as exc:
+        logger.exception("Failed to persist comparison to database")
+        shutil.rmtree(output_location.absolute_path, ignore_errors=True)
+        raise ComparisonError(500, "failed to persist comparison") from exc
+
     return {
         "comparison_id": comparison_id,
         "baseline_study_id": baseline.public_id,
@@ -219,6 +268,7 @@ def run_longitudinal_comparison(
         "notes": notes_list,
         "output_relative_path": output_relative_path,
     }
+
 
 
 def _safe_float(value: Any) -> float | None:

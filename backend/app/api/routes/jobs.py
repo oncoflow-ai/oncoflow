@@ -3,17 +3,15 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from sqlalchemy.orm import Session
-from uuid import UUID
 
-from app.api.deps import find_study_for_access, get_current_user, get_session, verify_study_access
+from app.api.deps import get_current_user
 from app.api.schemas.jobs import (
     JobStatusResponse,
     JobSubmissionResponse,
     LongitudinalComparisonRequest,
 )
 from app.api.schemas.results import ComparisonResponse
-from app.infra.db.models import Job, Study, User
+from app.infra.db.models import User
 from app.modules.jobs.service import JobService, SubmissionValidationError
 from app.modules.results.comparisons import (
     ComparisonError,
@@ -159,30 +157,13 @@ async def submit_demo_mri_segmentation_job(
 )
 def submit_longitudinal_comparison(
     payload: LongitudinalComparisonRequest,
-    session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> ComparisonResponse:
-    _, baseline_patient = find_study_for_access(
-        payload.baseline_study_id,
-        current_user,
-        session,
-        invalid_status_code=status.HTTP_400_BAD_REQUEST,
-    )
-    _, followup_patient = find_study_for_access(
-        payload.followup_study_id,
-        current_user,
-        session,
-        invalid_status_code=status.HTTP_400_BAD_REQUEST,
-    )
-    if baseline_patient.id != followup_patient.id:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="baseline and follow-up studies must belong to the same patient",
-        )
     try:
         result = run_longitudinal_comparison(
             baseline_study_id=payload.baseline_study_id,
             followup_study_id=payload.followup_study_id,
+            current_user=current_user,
         )
     except ComparisonError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
@@ -193,20 +174,10 @@ def submit_longitudinal_comparison(
 @router.get("/{job_id}", response_model=JobStatusResponse)
 def get_job_status(
     job_id: str,
-    session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> JobStatusResponse:
     try:
-        parsed_job_id = UUID(job_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail="job not found") from exc
-    job = session.query(Job).filter(Job.public_id == parsed_job_id).one_or_none()
-    if job is None:
-        raise HTTPException(status_code=404, detail="job not found")
-    study = session.query(Study).filter(Study.id == job.study_id).one()
-    verify_study_access(study, current_user, session)
-    try:
-        job_status = JobService().get_job_status(job_id)
+        job_status = JobService().get_job_status(job_id, current_user=current_user)
     except SubmissionValidationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 

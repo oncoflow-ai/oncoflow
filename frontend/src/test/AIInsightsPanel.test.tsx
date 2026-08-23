@@ -19,4 +19,3 @@ describe('AIInsightsPanel', () => {
     expect(screen.getByText(/Prior Summary RAG/i)).toBeInTheDocument()
   })
 })
-

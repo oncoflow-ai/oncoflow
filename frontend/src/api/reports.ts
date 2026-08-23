@@ -123,4 +123,3 @@ export async function generateReport(patientId: string): Promise<ClinicalReportE
   writeReports(map)
   return entry
 }
-
