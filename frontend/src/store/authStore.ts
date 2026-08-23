@@ -37,13 +37,13 @@ export const demoUsers: AppUser[] = [
     role: 'clinician',
   },
   {
-    id: 'PAT-1029',
-    name: 'Sarah Jenkins',
-    initials: 'SJ',
-    email: 'sarah.jenkins@example.test',
+    id: 'PAT-1031',
+    name: 'David Levi',
+    initials: 'DL',
+    email: 'david.levi@example.test',
     password: 'patient123',
     role: 'patient',
-    patientRecordId: 'P-1029',
+    patientRecordId: 'P-1031',
   },
 ]
 
@@ -126,12 +126,16 @@ export const useAuthStore = create<AuthState>()(
           throw new Error('Backend sign-in response is invalid')
         }
 
+        const patientRecordId = user.role === 'patient'
+          ? demoUsers.find(demoUser => demoUser.email.toLowerCase() === user.email.toLowerCase())?.patientRecordId
+          : undefined
         const authenticatedUser: AuthenticatedUser = {
           id: user.id,
           name: user.name,
           email: user.email,
           role: user.role,
-          initials: initialsFromName(user.name)
+          initials: initialsFromName(user.name),
+          ...(patientRecordId ? { patientRecordId } : {}),
         }
 
         sessionStorage.setItem('oncoflow_token', access_token)

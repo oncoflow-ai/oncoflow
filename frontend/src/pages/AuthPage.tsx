@@ -152,11 +152,11 @@ export default function AuthPage() {
 
                 <button
                   type="button"
-                  onClick={() => { setEmail('sarah.jenkins@example.test'); setPassword('patient123'); }}
+                  onClick={() => { setEmail('david.levi@example.test'); setPassword('patient123'); }}
                   className="px-2 py-1.5 bg-bg border border-border hover:border-teal text-left col-span-2 transition-colors"
                 >
-                  <div className="text-teal font-bold">Patient (Portal)</div>
-                  <div className="text-text3 text-[10px] truncate">sarah.jenkins@example.test (or ID PAT-1029)</div>
+                  <div className="text-teal font-bold">Patient (Portal) — David Levi</div>
+                  <div className="text-text3 text-[10px] truncate">david.levi@example.test (or ID PAT-1031)</div>
                 </button>
               </div>
             </div>
