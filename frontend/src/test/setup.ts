@@ -24,6 +24,7 @@ vi.mock('@/api/client', async (importOriginal) => {
                   id: 'RAD-002',
                   name: 'Alex Reviewer',
                   email: 'alex.reviewer@hospital.test',
+                  password: 'review123',
                   role: 'radiologist',
                   initials: 'AR'
               }

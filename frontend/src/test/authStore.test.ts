@@ -30,7 +30,7 @@ describe('useAuthStore', () => {
       },
     })
     const { result } = renderHook(() => useAuthStore())
-    let authenticatedUser: AuthenticatedUser
+    let authenticatedUser!: AuthenticatedUser
     await act(async () => {
       authenticatedUser = await result.current.login('backend.doctor@hospital.test', 'password')
     })
