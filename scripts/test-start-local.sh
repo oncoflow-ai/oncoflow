@@ -77,15 +77,13 @@ export ONCOFLOW_TEST_LOG="$TEST_DIR/commands.log"
 export ONCOFLOW_TEST_UVICORN_PID="$TEST_DIR/uvicorn.pid"
 export ONCOFLOW_TEST_NPM_PID="$TEST_DIR/npm.pid"
 
-(
-  cd "$TEST_DIR"
-  PATH="$TEST_DIR/bin:$PATH" \
-    ONCOFLOW_VENV_PATH="$TEST_DIR/venv" \
-    ONCOFLOW_FRONTEND_NODE_MODULES="$TEST_DIR/node_modules" \
-    ONCOFLOW_BACKEND_PORT=18000 \
-    ONCOFLOW_FRONTEND_PORT=15173 \
-    "$REPOSITORY_ROOT/scripts/start-local.sh" >"$TEST_DIR/launcher.log" 2>&1
-) &
+cd "$TEST_DIR"
+PATH="$TEST_DIR/bin:$PATH" \
+  ONCOFLOW_VENV_PATH="$TEST_DIR/venv" \
+  ONCOFLOW_FRONTEND_NODE_MODULES="$TEST_DIR/node_modules" \
+  ONCOFLOW_BACKEND_PORT=18000 \
+  ONCOFLOW_FRONTEND_PORT=15173 \
+  "$REPOSITORY_ROOT/scripts/start-local.sh" >"$TEST_DIR/launcher.log" 2>&1 &
 LAUNCHER_PID=$!
 
 wait_for_file "$ONCOFLOW_TEST_UVICORN_PID"
