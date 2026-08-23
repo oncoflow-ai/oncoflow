@@ -5,6 +5,7 @@ set -eu
 REPOSITORY_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/oncoflow-start-local.XXXXXX")
 LAUNCHER_PID=
+RUNTIME_DIR="$TEST_DIR/runtime"
 
 cleanup() {
   if [ -n "$LAUNCHER_PID" ] && kill -0 "$LAUNCHER_PID" 2>/dev/null; then
@@ -77,12 +78,16 @@ export ONCOFLOW_TEST_LOG="$TEST_DIR/commands.log"
 export ONCOFLOW_TEST_UVICORN_PID="$TEST_DIR/uvicorn.pid"
 export ONCOFLOW_TEST_NPM_PID="$TEST_DIR/npm.pid"
 
+STATE_KEY=$(printf '%s' "$REPOSITORY_ROOT" | cksum | awk '{print $1 "-" $2}')
+STATE_RECORD="$RUNTIME_DIR/oncoflow-launcher-$STATE_KEY.state"
+
 cd "$TEST_DIR"
 PATH="$TEST_DIR/bin:$PATH" \
   ONCOFLOW_VENV_PATH="$TEST_DIR/venv" \
   ONCOFLOW_FRONTEND_NODE_MODULES="$TEST_DIR/node_modules" \
   ONCOFLOW_BACKEND_PORT=18000 \
   ONCOFLOW_FRONTEND_PORT=15173 \
+  ONCOFLOW_RUNTIME_DIR="$RUNTIME_DIR" \
   "$REPOSITORY_ROOT/scripts/start-local.sh" >"$TEST_DIR/launcher.log" 2>&1 &
 LAUNCHER_PID=$!
 
@@ -98,9 +103,13 @@ grep -F 'args=run dev -- --host 127.0.0.1 --port 15173' "$ONCOFLOW_TEST_LOG" >/d
 UVICORN_PID=$(cat "$ONCOFLOW_TEST_UVICORN_PID")
 NPM_PID=$(cat "$ONCOFLOW_TEST_NPM_PID")
 
-kill -TERM "$LAUNCHER_PID"
+[ -s "$STATE_RECORD" ] || fail 'Launcher did not create its runtime record'
+
+ONCOFLOW_RUNTIME_DIR="$RUNTIME_DIR" \
+  "$REPOSITORY_ROOT/scripts/start-local.sh" --stop >"$TEST_DIR/stop.log" 2>&1
+
 wait_for_exit "$LAUNCHER_PID"
-wait "$LAUNCHER_PID" || fail 'Launcher returned a nonzero status after TERM'
+wait "$LAUNCHER_PID" || fail 'Launcher returned a nonzero status after --stop'
 LAUNCHER_PID=
 
 if kill -0 "$UVICORN_PID" 2>/dev/null; then
@@ -111,4 +120,12 @@ if kill -0 "$NPM_PID" 2>/dev/null; then
   fail 'Vite stub remained alive after launcher shutdown'
 fi
 
-printf '%s\n' 'PASS: local launcher starts both services and reaps them on shutdown'
+[ ! -e "$STATE_RECORD" ] || fail 'Launcher runtime record remained after shutdown'
+
+ONCOFLOW_RUNTIME_DIR="$RUNTIME_DIR" \
+  "$REPOSITORY_ROOT/scripts/start-local.sh" --stop >"$TEST_DIR/stop-again.log" 2>&1
+
+grep -F 'No tracked OncoFlow launcher is running.' "$TEST_DIR/stop-again.log" >/dev/null || \
+  fail 'Repeated --stop did not report that no tracked launcher is running'
+
+printf '%s\n' 'PASS: local launcher starts both services and reaps them through safe, idempotent --stop'
