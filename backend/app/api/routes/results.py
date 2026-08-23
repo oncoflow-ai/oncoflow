@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
+from app.api.deps import find_study_for_access, get_current_user, get_session
+from app.infra.db.models import User
 
 from app.api.schemas.results import (
     ArtifactRefResponse,
@@ -26,8 +30,10 @@ router = APIRouter(prefix="/results", tags=["results"])
 
 
 @router.get("/studies", response_model=list[StudyListItemResponse])
-def list_studies_endpoint() -> list[StudyListItemResponse]:
-    items = list_studies()
+def list_studies_endpoint(
+    current_user: User = Depends(get_current_user),
+) -> list[StudyListItemResponse]:
+    items = list_studies(current_user=current_user)
     return [
         StudyListItemResponse(
             study_id=item.study_id,
@@ -43,7 +49,11 @@ def list_studies_endpoint() -> list[StudyListItemResponse]:
 
 
 @router.get("/comparisons/{comparison_id}", response_model=ComparisonResponse)
-def get_comparison(comparison_id: str) -> ComparisonResponse:
+def get_comparison(
+    comparison_id: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> ComparisonResponse:
     location = resolve_artifact_location(
         "derived", f"comparisons/{comparison_id}/comparison.json"
     )
@@ -51,6 +61,19 @@ def get_comparison(comparison_id: str) -> ComparisonResponse:
         raise HTTPException(status_code=404, detail="comparison not found")
 
     raw = json.loads(Path(location.absolute_path).read_text())
+    baseline_id = str(raw.get("baseline_study_id", ""))
+    followup_id = str(raw.get("followup_study_id", ""))
+    _, baseline_patient = find_study_for_access(
+        baseline_id, current_user, session
+    )
+    _, followup_patient = find_study_for_access(
+        followup_id, current_user, session
+    )
+    if baseline_patient.id != followup_patient.id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="comparison studies must belong to the same patient",
+        )
     metrics = raw.get("metrics", {})
     registration = raw.get("registration", {})
     notes_field = raw.get("notes", "")
@@ -94,7 +117,17 @@ def get_comparison(comparison_id: str) -> ComparisonResponse:
 
 
 @router.get("/{study_id}", response_model=StoredCaseResultResponse)
-def get_case_results(study_id: str) -> StoredCaseResultResponse:
+def get_case_results(
+    study_id: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> StoredCaseResultResponse:
+    find_study_for_access(
+        study_id,
+        current_user,
+        session,
+        invalid_status_code=status.HTTP_400_BAD_REQUEST,
+    )
     try:
         result = get_case_result_payload(study_id=study_id)
     except InvalidResultRequestError as exc:

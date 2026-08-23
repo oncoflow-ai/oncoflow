@@ -306,6 +306,67 @@ def test_get_job_status_returns_failure_payload(client) -> None:
     assert body["error"]["code"] == "conversion-error"
 
 
+def test_job_status_rejects_user_unassigned_from_owning_patient(client) -> None:
+    assert client.get("/api/v1/health").status_code == 200
+    session_factory = create_session_factory()
+    with session_factory() as session:
+        clinician = User(email="job-outsider@test.local", name="Outsider", hashed_password="hash", role="clinician")
+        patient = Patient(pseudonym="PAT-JOB-OWNER", status="active")
+        session.add_all([clinician, patient])
+        session.flush()
+        study = Study(
+            patient_id=patient.id,
+            patient_public_id=patient.public_id,
+            study_instance_uid="job-auth-study",
+            source_kind="nifti-upload",
+            source_metadata={},
+            staging_status="staged",
+        )
+        session.add(study)
+        session.flush()
+        job = Job(study_id=study.id, job_type="ingest-nifti", status="queued", stage="staged")
+        session.add(job)
+        session.commit()
+        job_id = str(job.public_id)
+
+    client.app.dependency_overrides[get_current_user] = lambda: clinician
+    response = client.get(f"/api/v1/jobs/{job_id}")
+
+    assert response.status_code == 403
+
+
+def test_comparison_requires_authorized_same_patient_studies(client, monkeypatch) -> None:
+    assert client.get("/api/v1/health").status_code == 200
+    session_factory = create_session_factory()
+    with session_factory() as session:
+        clinician = User(email="comparison-clinician@test.local", name="Clinician", hashed_password="hash", role="clinician")
+        patient_a = Patient(pseudonym="PAT-COMP-A", status="active")
+        patient_b = Patient(pseudonym="PAT-COMP-B", status="active")
+        session.add_all([clinician, patient_a, patient_b])
+        session.flush()
+        session.add(Assignment(doctor_id=clinician.id, patient_id=patient_a.id))
+        study_a = Study(patient_id=patient_a.id, patient_public_id=patient_a.public_id, study_instance_uid="comp-a", source_kind="nifti-upload", source_metadata={}, staging_status="staged")
+        study_b = Study(patient_id=patient_b.id, patient_public_id=patient_b.public_id, study_instance_uid="comp-b", source_kind="nifti-upload", source_metadata={}, staging_status="staged")
+        session.add_all([study_a, study_b])
+        session.commit()
+        ids = (str(study_a.public_id), str(study_b.public_id))
+
+    monkeypatch.setattr(
+        "app.api.routes.jobs.run_longitudinal_comparison",
+        lambda **_: pytest.fail("comparison must not run before authorization"),
+    )
+    payload = {"baselineStudyId": ids[0], "followupStudyId": ids[1]}
+    client.app.dependency_overrides[get_current_user] = lambda: clinician
+    unauthorized = client.post("/api/v1/jobs/longitudinal-comparison", json=payload)
+    client.app.dependency_overrides[get_current_user] = lambda: User(
+        id="admin-test", email="admin@test.local", name="Admin", role="admin"
+    )
+    cross_patient = client.post("/api/v1/jobs/longitudinal-comparison", json=payload)
+
+    assert unauthorized.status_code == 403
+    assert cross_patient.status_code == 422
+
+
 def test_invalid_state_transition_is_rejected() -> None:
     with pytest.raises(ValueError, match="Invalid job transition"):
         transition_job("completed", "running", stage="profiling")

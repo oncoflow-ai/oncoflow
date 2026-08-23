@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from uuid import uuid4
+import json
+from uuid import UUID, uuid4
 
 import pytest
 
-from app.infra.db.models import Artifact, StoredLesionResult, Study, StudyResult, User
+from app.infra.db.models import Assignment, Artifact, Patient, StoredLesionResult, Study, StudyResult, User
 from app.infra.db.session import create_session_factory
 from app.modules.results.service import ResultNotFoundError, get_case_result_payload
 from app.api.deps import get_current_user
+from app.modules.artifacts.storage import resolve_artifact_location
 
 
 @pytest.fixture(autouse=True)
@@ -33,8 +35,13 @@ def bypass_auth(client) -> None:
 def _seed_results():
     session_factory = create_session_factory()
     with session_factory() as session:
+        patient = Patient(pseudonym=f"PAT-RESULT-{uuid4().hex[:8]}", status="active")
+        session.add(patient)
+        session.flush()
         study = Study(
             public_id=uuid4(),
+            patient_id=patient.id,
+            patient_public_id=patient.public_id,
             study_instance_uid="1.2.3.4.5.6",
             source_kind="dicom-study",
             source_metadata={},
@@ -151,3 +158,61 @@ def test_result_service_returns_empty_lesion_case_payload() -> None:
     assert payload.study_id == study_id
     assert payload.lesions == ()
     assert payload.needs_review is True
+
+
+def test_results_and_study_listing_are_scoped_to_assigned_patients(client) -> None:
+    assert client.get("/api/v1/health").status_code == 200
+    restricted_study_id = _seed_results()
+    session_factory = create_session_factory()
+    with session_factory() as session:
+        clinician = User(email="results-clinician@test.local", name="Clinician", hashed_password="hash", role="clinician")
+        assigned_patient = Patient(pseudonym="PAT-RESULT-ASSIGNED", status="active")
+        restricted_patient = Patient(pseudonym="PAT-RESULT-RESTRICTED", status="active")
+        session.add_all([clinician, assigned_patient, restricted_patient])
+        session.flush()
+        session.add(Assignment(doctor_id=clinician.id, patient_id=assigned_patient.id))
+        assigned_study = Study(patient_id=assigned_patient.id, patient_public_id=assigned_patient.public_id, study_instance_uid="result-assigned", source_kind="nifti-upload", source_metadata={}, staging_status="staged")
+        session.add(assigned_study)
+        restricted_study = session.query(Study).filter(Study.public_id == UUID(restricted_study_id)).one()
+        restricted_study.patient_id = restricted_patient.id
+        restricted_study.patient_public_id = restricted_patient.public_id
+        session.commit()
+        assigned_study_id = str(assigned_study.public_id)
+
+    client.app.dependency_overrides[get_current_user] = lambda: clinician
+    forbidden = client.get(f"/api/v1/results/{restricted_study_id}")
+    listing = client.get("/api/v1/results/studies")
+
+    assert forbidden.status_code == 403
+    assert listing.status_code == 200
+    assert [item["studyId"] for item in listing.json()] == [assigned_study_id]
+
+
+def test_stored_comparison_rejects_user_unassigned_from_patient(client) -> None:
+    assert client.get("/api/v1/health").status_code == 200
+    session_factory = create_session_factory()
+    with session_factory() as session:
+        clinician = User(email="stored-comparison-outsider@test.local", name="Outsider", hashed_password="hash", role="clinician")
+        patient = Patient(pseudonym="PAT-STORED-COMPARISON", status="active")
+        session.add_all([clinician, patient])
+        session.flush()
+        baseline = Study(patient_id=patient.id, patient_public_id=patient.public_id, study_instance_uid="stored-comp-a", source_kind="nifti-upload", source_metadata={}, staging_status="staged")
+        followup = Study(patient_id=patient.id, patient_public_id=patient.public_id, study_instance_uid="stored-comp-b", source_kind="nifti-upload", source_metadata={}, staging_status="staged")
+        session.add_all([baseline, followup])
+        session.commit()
+        baseline_id = str(baseline.public_id)
+        followup_id = str(followup.public_id)
+
+    comparison_id = str(uuid4())
+    location = resolve_artifact_location("derived", f"comparisons/{comparison_id}/comparison.json")
+    location.absolute_path.parent.mkdir(parents=True, exist_ok=True)
+    location.absolute_path.write_text(json.dumps({
+        "baseline_study_id": baseline_id,
+        "followup_study_id": followup_id,
+        "metrics": {},
+    }))
+    client.app.dependency_overrides[get_current_user] = lambda: clinician
+
+    response = client.get(f"/api/v1/results/comparisons/{comparison_id}")
+
+    assert response.status_code == 403

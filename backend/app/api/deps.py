@@ -94,3 +94,42 @@ def verify_patient_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this patient record",
         )
+
+
+def resolve_study_patient(study: Study, session: Session) -> Patient:
+    patient = None
+    if study.patient_id is not None:
+        patient = session.query(Patient).filter(Patient.id == study.patient_id).one_or_none()
+    if patient is None:
+        patient = session.query(Patient).filter(
+            Patient.public_id == study.patient_public_id
+        ).one_or_none()
+    if patient is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patient for study not found",
+        )
+    return patient
+
+
+def verify_study_access(study: Study, user: User, session: Session) -> Patient:
+    patient = resolve_study_patient(study, session)
+    verify_patient_access(patient, user, session)
+    return patient
+
+
+def find_study_for_access(
+    study_id: str,
+    user: User,
+    session: Session,
+    *,
+    invalid_status_code: int = status.HTTP_404_NOT_FOUND,
+) -> tuple[Study, Patient]:
+    try:
+        parsed = UUID(study_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=invalid_status_code, detail="study not found") from exc
+    study = session.query(Study).filter(Study.public_id == parsed).one_or_none()
+    if study is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="study not found")
+    return study, verify_study_access(study, user, session)
