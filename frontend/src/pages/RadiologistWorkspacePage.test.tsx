@@ -89,6 +89,7 @@ function renderRadiologist() {
         <Routes>
           <Route path="/radiologist" element={<RadiologistWorkspacePage />} />
           <Route path="/doctor/patients/:id" element={<div>Patient Chart</div>} />
+          <Route path="/patients/:patientId/results/:studyId" element={<div>Clinical result: P-1001 / study-1</div>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>
@@ -283,7 +284,7 @@ describe('RadiologistWorkspacePage', () => {
     })
   })
 
-  it('polls active jobs and loads results after completion', async () => {
+  it('opens a dedicated clinical result after a completed upload', async () => {
     submitMriIngestionJobMock.mockResolvedValue({
       jobId: 'job-1',
       studyId: 'study-1',
@@ -310,37 +311,6 @@ describe('RadiologistWorkspacePage', () => {
         error: null,
       })
 
-    getStudyResultsMock.mockResolvedValue({
-      studyId: 'study-1',
-      resultArtifact: {
-        artifactKind: 'study-result-bundle',
-        storageRoot: 'derived',
-        relativePath: 'studies/study-1/results/study-result.json',
-      },
-      lesions: [
-        {
-          lesionId: 'lesion-001',
-          boundingBox: { xMin: 1, yMin: 2, zMin: 3, xMax: 10, yMax: 11, zMax: 12 },
-          measurements: { volumeMm3: 1234, longestDiameterMm: 18.5 },
-          maskArtifact: {
-            artifactKind: 'segmentation-mask',
-            storageRoot: 'derived',
-            relativePath: 'studies/study-1/lesions/component-001.nii.gz',
-          },
-          reviewArtifacts: [
-            {
-              artifactKind: 'review-overlay',
-              storageRoot: 'derived',
-              relativePath: 'studies/study-1/review/overlay-001.png',
-            },
-          ],
-          metadata: null,
-        },
-      ],
-      needsReview: true,
-      caseQcReasons: ['selected canonical series do not share geometry'],
-    })
-
     renderRadiologist()
     const user = userEvent.setup()
     await selectAdaPatient(user)
@@ -351,14 +321,11 @@ describe('RadiologistWorkspacePage', () => {
     await user.click(screen.getByRole('button', { name: 'Upload And Start' }))
 
     await waitFor(() => expect(getJobStatusMock.mock.calls.length).toBeGreaterThanOrEqual(2), { timeout: 10000 })
-    await waitFor(() => expect(getStudyResultsMock).toHaveBeenCalledWith('study-1'), { timeout: 10000 })
-
-    expect(await screen.findByText('selected canonical series do not share geometry')).toBeInTheDocument()
-    expect(screen.getByText('lesion-001')).toBeInTheDocument()
-    expect(screen.getAllByText(/studies\/study-1\/lesions\/component-001\.nii\.gz/)).toHaveLength(2)
+    expect(await screen.findByText('Clinical result: P-1001 / study-1')).toBeInTheDocument()
+    expect(sessionStorage.getItem('oncoflow_mock_reports')).toContain('MRI segmentation analysis')
   }, 10000)
 
-  it('renders backend failure details for failed jobs', async () => {
+  it('keeps failed-job messaging clinical and hides backend payload details', async () => {
     submitMriIngestionJobMock.mockResolvedValue({
       jobId: 'job-fail',
       studyId: 'study-fail',
@@ -389,12 +356,12 @@ describe('RadiologistWorkspacePage', () => {
     await user.upload(await screen.findByLabelText('MRI Study Zip'), file)
     await user.click(screen.getByRole('button', { name: 'Upload And Start' }))
 
-    expect(await screen.findByText('Backend failure')).toBeInTheDocument()
-    expect(screen.getAllByText(/ONCOFLOW_NNUNET_MODEL_DIR is required/)).toHaveLength(2)
-    expect(screen.getAllByText(/model-runtime-missing/)).toHaveLength(2)
+    expect(await screen.findByText(/This analysis could not be completed/i)).toBeInTheDocument()
+    expect(screen.queryByText(/ONCOFLOW_NNUNET_MODEL_DIR is required/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/model-runtime-missing/)).not.toBeInTheDocument()
   })
 
-  it('shows a specific message when results are missing after completion', async () => {
+  it('defers result loading to the dedicated result page', async () => {
     submitMriIngestionJobMock.mockResolvedValue({
       jobId: 'job-404',
       studyId: 'study-404',
@@ -412,13 +379,6 @@ describe('RadiologistWorkspacePage', () => {
       error: null,
     })
 
-    getStudyResultsMock.mockRejectedValue(
-      new MockBackendApiError('result not found', {
-        statusCode: 404,
-        detail: 'result not found',
-      })
-    )
-
     renderRadiologist()
     const user = userEvent.setup()
     await selectAdaPatient(user)
@@ -428,9 +388,8 @@ describe('RadiologistWorkspacePage', () => {
     await user.upload(await screen.findByLabelText('MRI Study Zip'), file)
     await user.click(screen.getByRole('button', { name: 'Upload And Start' }))
 
-    expect(
-      await screen.findByText('Job completed, but the backend returned no stored results for this study.')
-    ).toBeInTheDocument()
+    expect(await screen.findByText('Clinical result: P-1001 / study-1')).toBeInTheDocument()
+    expect(getStudyResultsMock).not.toHaveBeenCalled()
   })
 })
 

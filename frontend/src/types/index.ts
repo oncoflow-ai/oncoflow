@@ -88,6 +88,8 @@ export interface ClinicalReportEntry {
   title: string
   generatedAt: string
   summarySnippet: string
+  studyId?: string
+  kind?: 'clinical-summary' | 'mri-analysis'
 }
 
 export interface BackendJobError {

@@ -57,6 +57,7 @@ export const router = createBrowserRouter([
         children: [
           { path: '/doctor', element: <DoctorDashboardPage /> },
           { path: '/doctor/patients/:id', element: <DoctorPatientDashboardPage /> },
+          { path: '/patients/:patientId/results/:studyId', element: <RadiologistPatientResultPage /> },
         ],
       },
       {

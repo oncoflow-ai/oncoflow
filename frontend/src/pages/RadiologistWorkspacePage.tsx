@@ -10,6 +10,7 @@ import EmptyState from '@/components/shared/EmptyState'
 import { getPatients } from '@/api/patients'
 import { getScans } from '@/api/scans'
 import { listStudies, submitComparison } from '@/api/backendWorkspace'
+import { saveMriAnalysisReport } from '@/api/reports'
 import type { Patient, Scan } from '@/types'
 import { Users } from 'lucide-react'
 
@@ -89,8 +90,11 @@ export default function RadiologistWorkspacePage() {
       return
     }
     queryClient.invalidateQueries({ queryKey: ['backend-studies'] })
-    if (payload.mode === 'class-demo' && selectedPatient) {
-      navigate(`/radiologist/patients/${selectedPatient.id}/results/${payload.studyId}`)
+    if (selectedPatient) {
+      void autoCompareMutation.mutateAsync().catch(() => {})
+      saveMriAnalysisReport(selectedPatient.id, payload.studyId)
+      queryClient.invalidateQueries({ queryKey: ['reports', selectedPatient.id] })
+      navigate(`/patients/${selectedPatient.id}/results/${payload.studyId}`)
       return
     }
     void autoCompareMutation.mutateAsync().catch(() => {})

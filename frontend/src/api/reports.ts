@@ -55,23 +55,26 @@ export async function getSummary(patientId: string): Promise<Summary> {
 }
 
 export async function listReports(patientId: string): Promise<ClinicalReportEntry[]> {
+  const stored = readReports()[patientId] ?? []
   try {
     const res = await apiClient.get(`/api/v1/agents/summaries/${patientId}`)
     if (res.data && res.data.length > 0) {
-      return res.data.map((s: { summary_id: string; title: string; created_at: string; findings: string }) => ({
+      const clinicalReports = res.data.map((s: { summary_id: string; title: string; created_at: string; findings: string }) => ({
         id: s.summary_id,
         patientId,
         title: s.title || `Clinical Summary · ${s.created_at.slice(0, 10)}`,
         generatedAt: s.created_at,
         summarySnippet: s.findings.slice(0, 140).replace(/\s+/g, ' ').trim() + '…',
       }))
+      return [...clinicalReports, ...stored]
+        .filter((report, index, reports) => reports.findIndex(candidate => candidate.id === report.id) === index)
+        .sort((a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime())
     }
   } catch {
     // Fallback to session storage
   }
 
   await delay(250)
-  const stored = readReports()[patientId] ?? []
   return [...stored].sort(
     (a, b) => new Date(b.generatedAt).getTime() - new Date(a.generatedAt).getTime()
   )
@@ -120,6 +123,31 @@ export async function generateReport(patientId: string): Promise<ClinicalReportE
   const map = readReports()
   const prev = map[patientId] ?? []
   map[patientId] = [entry, ...prev]
+  writeReports(map)
+  return entry
+}
+
+/**
+ * MRI analyses are saved locally until the clinical-report backend owns this
+ * relationship. The stable study-based id makes completion retries idempotent.
+ */
+export function saveMriAnalysisReport(patientId: string, studyId: string): ClinicalReportEntry {
+  const entry: ClinicalReportEntry = {
+    id: `MRI-${studyId}`,
+    patientId,
+    studyId,
+    kind: 'mri-analysis',
+    title: 'MRI segmentation analysis',
+    generatedAt: new Date().toISOString(),
+    summarySnippet: 'MRI segmentation is complete and ready for clinical review.',
+  }
+
+  const map = readReports()
+  const reports = map[patientId] ?? []
+  const existingIndex = reports.findIndex(report => report.studyId === studyId)
+  map[patientId] = existingIndex === -1
+    ? [entry, ...reports]
+    : reports.map((report, index) => index === existingIndex ? { ...report, ...entry, generatedAt: report.generatedAt } : report)
   writeReports(map)
   return entry
 }
