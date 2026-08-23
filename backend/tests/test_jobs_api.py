@@ -227,6 +227,28 @@ def test_post_mri_ingestion_rejects_invalid_payloads(client, files, expected_sta
     assert response.status_code == expected_status
 
 
+def test_invalid_mri_archive_does_not_leave_staged_files(client) -> None:
+    storage_root = Path(get_settings().storage_root)
+    baseline_paths = (
+        {path.relative_to(storage_root) for path in storage_root.rglob("*")}
+        if storage_root.exists()
+        else set()
+    )
+
+    response = client.post(
+        "/api/v1/jobs/mri-ingestion",
+        files={"study_archive": ("broken.zip", b"not-a-zip", "application/zip")},
+    )
+
+    current_paths = (
+        {path.relative_to(storage_root) for path in storage_root.rglob("*")}
+        if storage_root.exists()
+        else set()
+    )
+    assert response.status_code == 400
+    assert current_paths == baseline_paths
+
+
 def test_submission_dispatches_identifiers_not_raw_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
     archive_bytes = _zip_bytes({"exam/file1.dcm": b"dicom"})
     captured: dict[str, str] = {}

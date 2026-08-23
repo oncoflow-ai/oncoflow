@@ -167,14 +167,13 @@ class JobService:
         archive_id = uuid4()
         archive_name = f"{archive_id}.zip"
         archive_location = resolve_artifact_location("raw", f"studies/{archive_id}/{archive_name}")
-        archive_location.absolute_path.parent.mkdir(parents=True, exist_ok=True)
-        archive_location.absolute_path.write_bytes(archive_bytes)
-
-        extracted_relative_path = f"studies/{archive_id}/extracted"
-        extracted_location = resolve_artifact_location("raw", extracted_relative_path)
-        extracted_location.absolute_path.mkdir(parents=True, exist_ok=True)
-
         try:
+            archive_location.absolute_path.parent.mkdir(parents=True, exist_ok=True)
+            archive_location.absolute_path.write_bytes(archive_bytes)
+
+            extracted_relative_path = f"studies/{archive_id}/extracted"
+            extracted_location = resolve_artifact_location("raw", extracted_relative_path)
+            extracted_location.absolute_path.mkdir(parents=True, exist_ok=True)
             series_files = self._extract_archive(archive_bytes, extracted_location.absolute_path)
         except Exception:
             shutil.rmtree(archive_location.absolute_path.parent, ignore_errors=True)
