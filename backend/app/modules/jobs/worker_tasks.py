@@ -470,7 +470,7 @@ def execute_demo_mri_segmentation_job(*, job_id: str) -> WorkerDispatchEnvelope:
                 },
             )
         )
-        session.flush()
+        session.commit()
 
         try:
             delay_seconds = max(0.0, float(settings.demo_job_delay_seconds))
