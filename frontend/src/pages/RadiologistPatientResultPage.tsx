@@ -271,8 +271,8 @@ export default function RadiologistPatientResultPage() {
                 />
               </section>
 
-              <div className="grid gap-5 lg:grid-cols-[1.15fr,0.85fr]">
-                <section className="border border-border bg-surface p-5 lg:col-span-2">
+              <div className="grid gap-5 lg:grid-cols-2">
+                <section className="border border-border bg-surface p-5">
                   <div className="mb-4 flex items-center gap-2 font-mono text-[12px] font-bold uppercase tracking-widest text-text2">
                     <ScanSearch size={15} />
                     Segmentation viewer
