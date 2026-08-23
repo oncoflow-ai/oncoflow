@@ -19,7 +19,7 @@ def _runtime(tmp_path: Path) -> RuntimeReadiness:
     model_root = tmp_path / "model"
     model_root.mkdir(parents=True, exist_ok=True)
     return RuntimeReadiness(
-        model_id="nnunet-v1-brats",
+        model_id="nnunet-v2-resenc",
         model_directory=str(model_root),
         checkpoint_relative_path="model_final_checkpoint.model",
         package_manifest_relative_path="dataset.json",

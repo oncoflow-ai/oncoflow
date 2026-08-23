@@ -230,3 +230,47 @@ class User(Base):
         cascade="all, delete-orphan",
     )
 
+
+class PatientDocument(Base):
+    __tablename__ = "patient_documents"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    public_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), unique=True, default=uuid4, index=True)
+    patient_public_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), index=True)
+    document_type: Mapped[str] = mapped_column(String(64), default="clinical_note", index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    content: Mapped[str] = mapped_column(Text)
+    doc_metadata: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+
+class PatientSummary(Base):
+    __tablename__ = "patient_summaries"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    public_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), unique=True, default=uuid4, index=True)
+    patient_public_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), index=True)
+    study_id: Mapped[int | None] = mapped_column(ForeignKey("studies.id"), nullable=True, index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    model_name: Mapped[str] = mapped_column(String(128), default="oncoflow-agent-v1")
+    technique: Mapped[str] = mapped_column(Text, default="")
+    findings: Mapped[str] = mapped_column(Text)
+    impression: Mapped[str] = mapped_column(Text)
+    comparison: Mapped[str] = mapped_column(Text, default="")
+    recommendations: Mapped[list[str]] = mapped_column(JSON, default=list)
+    quantitative_summary: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    rag_context_used: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    agent_trace: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+    study: Mapped[Study | None] = relationship()

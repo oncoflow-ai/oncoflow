@@ -137,9 +137,18 @@ export const useAuthStore = create<AuthState>()(
           set({ user: authenticatedUser as AuthenticatedUser })
           return authenticatedUser as AuthenticatedUser
         } catch (error) {
+          // Fallback to local demo users if backend is offline or for demo credentials
+          const users = mergeUsers(useAuthStore.getState().users)
+          const localUser = findUser(users, idOrEmail, role)
+          if (localUser && localUser.password === password) {
+            const sanitized = sanitizeUser(localUser)
+            set({ user: sanitized })
+            return sanitized
+          }
           throw new Error('Invalid user credentials')
         }
       },
+
 
       addUser: async ({ id, name, email, password, role, patientRecordId }) => {
         if (!name.trim() || !email.trim() || !password.trim()) {
