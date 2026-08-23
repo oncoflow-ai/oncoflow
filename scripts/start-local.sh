@@ -18,6 +18,8 @@ FRONTEND_PORT=${ONCOFLOW_FRONTEND_PORT:-5173}
 RUNTIME_DIR=${ONCOFLOW_RUNTIME_DIR:-"${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}/oncoflow-$(id -u)}"}
 RUNTIME_KEY=$(printf '%s' "$REPOSITORY_ROOT" | cksum | awk '{print $1 "-" $2}')
 RUNTIME_STATE_FILE="$RUNTIME_DIR/oncoflow-launcher-$RUNTIME_KEY.state"
+LOCAL_STORAGE_ROOT=${ONCOFLOW_STORAGE_ROOT:-"$REPOSITORY_ROOT/var/oncoflow"}
+ENV_FILE=${ONCOFLOW_ENV_FILE:-"$REPOSITORY_ROOT/.env"}
 UVICORN="$VENV_PATH/bin/uvicorn"
 BACKEND_PID=
 FRONTEND_PID=
@@ -30,6 +32,58 @@ RUNTIME_RECORD_START=
 fail() {
   printf '%s\n' "$*" >&2
   exit 1
+}
+
+load_project_env() {
+  if [ ! -f "$ENV_FILE" ]; then
+    if [ -n "${ONCOFLOW_ENV_FILE+x}" ]; then
+      fail "Environment file does not exist: $ENV_FILE"
+    fi
+    return 0
+  fi
+
+  [ -r "$ENV_FILE" ] || fail "Environment file is not readable: $ENV_FILE"
+
+  dotenv_line_number=0
+  while IFS= read -r dotenv_line || [ -n "$dotenv_line" ]; do
+    dotenv_line_number=$((dotenv_line_number + 1))
+    dotenv_record=$(printf '%s\n' "$dotenv_line" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+
+    case "$dotenv_record" in
+      '' | \#*) continue ;;
+      *=*) ;;
+      *) fail "Invalid dotenv record at $ENV_FILE:$dotenv_line_number" ;;
+    esac
+
+    dotenv_name=$(printf '%s\n' "${dotenv_record%%=*}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+    dotenv_value=$(printf '%s\n' "${dotenv_record#*=}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+
+    case "$dotenv_name" in
+      '' | [!A-Za-z_]* | *[!A-Za-z0-9_]*)
+        fail "Invalid dotenv record at $ENV_FILE:$dotenv_line_number"
+        ;;
+    esac
+
+    case "$dotenv_value" in
+      \"*\")
+        dotenv_value=${dotenv_value#\"}
+        dotenv_value=${dotenv_value%\"}
+        ;;
+      \'*\')
+        dotenv_value=${dotenv_value#\'}
+        dotenv_value=${dotenv_value%\'}
+        ;;
+      \"* | \'* | *\" | *\')
+        fail "Invalid dotenv record at $ENV_FILE:$dotenv_line_number"
+        ;;
+    esac
+
+    if printenv "$dotenv_name" >/dev/null 2>&1; then
+      continue
+    fi
+
+    export "$dotenv_name=$dotenv_value"
+  done <"$ENV_FILE"
 }
 
 validate_port() {
@@ -216,6 +270,7 @@ esac
 
 validate_port "$BACKEND_PORT" 'ONCOFLOW_BACKEND_PORT'
 validate_port "$FRONTEND_PORT" 'ONCOFLOW_FRONTEND_PORT'
+load_project_env
 
 if [ ! -x "$UVICORN" ]; then
   fail "Backend dependencies are not installed. Run: python3 -m venv .venv && .venv/bin/python -m pip install -e \"backend[dev,ml]\" && .venv/bin/python -m pip install -r ml/inference/requirements.txt"
@@ -250,6 +305,7 @@ run_backend() {
 
   (
     cd "$REPOSITORY_ROOT/backend"
+    ONCOFLOW_STORAGE_ROOT="$LOCAL_STORAGE_ROOT" \
     PYTHONPATH=".:..${PYTHONPATH:+:$PYTHONPATH}" exec "$UVICORN" app.main:app --reload --host 127.0.0.1 --port "$BACKEND_PORT"
   ) &
   child_pid=$!
