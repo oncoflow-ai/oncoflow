@@ -19,10 +19,19 @@ Afterward, start the backend and frontend together from the repository root:
 
 The backend readiness endpoint is `http://localhost:8000/api/v1/ready`, and
 Vite is available at `http://localhost:5173`. Press Ctrl-C to stop both
-development servers.
+development servers. To stop a launcher that is running in another terminal,
+use:
+
+```bash
+./scripts/start-local.sh --stop
+```
+
+This command stops only a launcher it can validate as tracked by this
+repository; it never selects processes by port.
 
 For local overrides, set `ONCOFLOW_VENV_PATH`, `ONCOFLOW_BACKEND_PORT`, or
-`ONCOFLOW_FRONTEND_PORT` before running the launcher.
+`ONCOFLOW_FRONTEND_PORT` before running the launcher. `ONCOFLOW_RUNTIME_DIR`
+is an advanced local/test override for the launcher's private runtime record.
 
 ## Local demo login
 
