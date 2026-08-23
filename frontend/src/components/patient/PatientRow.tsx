@@ -25,11 +25,17 @@ export default function PatientRow({
 }: PatientRowProps) {
   const navigate = useNavigate()
 
+  function openChart() {
+    navigate(`/doctor/patients/${patient.id}?tab=upload`)
+  }
+
   function go() {
     onActivate?.()
-    if (rowMode === 'navigate') {
-      navigate(`${navigateBase.replace(/\/$/, '')}/${patient.id}`)
+    if (rowMode === 'select') {
+      openChart()
+      return
     }
+    navigate(`${navigateBase.replace(/\/$/, '')}/${patient.id}`)
   }
 
   const volumeDelta = latestScan && previousScan
@@ -101,7 +107,7 @@ export default function PatientRow({
             aria-label={`Open chart page for ${patient.name}`}
             onClick={e => {
               e.stopPropagation()
-              navigate(`/doctor/patients/${patient.id}?tab=upload`)
+              openChart()
             }}
             className="inline-flex items-center gap-1 font-mono text-[10px] font-bold text-teal hover:underline bg-teal/10 px-2 py-1 border border-teal/20 transition-colors"
             title={`Open chart page for ${patient.name}`}
