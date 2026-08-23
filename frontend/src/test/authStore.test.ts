@@ -50,6 +50,33 @@ describe('useAuthStore', () => {
     expect(sessionStorage.getItem('oncoflow_token')).toBe('backend-issued-token')
   })
 
+  it('retains the demo patient record link when the backend returns an account UUID', async () => {
+    vi.mocked(apiClient.post).mockResolvedValueOnce({
+      data: {
+        access_token: 'backend-issued-token',
+        user: {
+          id: 'f761aa8f-9a5a-408f-a3e7-13247133d5aa',
+          name: 'David Levi',
+          email: 'david.levi@example.test',
+          role: 'patient',
+        },
+      },
+    })
+    const { result } = renderHook(() => useAuthStore())
+
+    await act(async () => {
+      await result.current.login('david.levi@example.test', 'patient123')
+    })
+
+    expect(result.current.user).toMatchObject({
+      id: 'f761aa8f-9a5a-408f-a3e7-13247133d5aa',
+      name: 'David Levi',
+      email: 'david.levi@example.test',
+      role: 'patient',
+      patientRecordId: 'P-1031',
+    })
+  })
+
   it('propagates a backend rejection without authenticating a demo user', async () => {
     const backendError = new Error('Backend rejected this sign-in')
     vi.mocked(apiClient.post).mockRejectedValueOnce(backendError)

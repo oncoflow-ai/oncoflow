@@ -45,6 +45,16 @@ describe('AuthPage', () => {
     await screen.findByText(/required/i)
   })
 
+  it('prefills David Levi\'s credentials from the Patient Portal quick-demo control', async () => {
+    const user = userEvent.setup()
+    renderAuthPage()
+
+    await user.click(screen.getByRole('button', { name: /Patient \(Portal\).*David Levi/i }))
+
+    expect(screen.getByPlaceholderText(/dr\.cohen/)).toHaveValue('david.levi@example.test')
+    expect(screen.getByPlaceholderText('••••••••')).toHaveValue('patient123')
+  })
+
   it('shows the backend sign-in error without authenticating or navigating', async () => {
     const user = userEvent.setup()
     vi.mocked(apiClient.post).mockRejectedValueOnce(new Error('Account is not authorized'))
