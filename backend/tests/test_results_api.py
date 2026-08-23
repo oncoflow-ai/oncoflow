@@ -1,14 +1,25 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
-from app.infra.db.models import Artifact, StoredLesionResult, Study, StudyResult, User
+from app.infra.db.models import (
+    Artifact,
+    Assignment,
+    Comparison,
+    Patient,
+    StoredLesionResult,
+    Study,
+    StudyResult,
+    User,
+)
 from app.infra.db.session import create_session_factory
 from app.modules.results.service import ResultNotFoundError, get_case_result_payload
 from app.api.deps import get_current_user
+from app.modules.artifacts.storage import resolve_artifact_location
 
 
 @pytest.fixture(autouse=True)
@@ -81,6 +92,44 @@ def _seed_results():
         return str(study.public_id)
 
 
+def _seed_authorized_study(*, pseudonym: str, study_uid: str) -> tuple[Patient, Study]:
+    with create_session_factory()() as session:
+        patient = Patient(pseudonym=pseudonym)
+        session.add(patient)
+        session.flush()
+        study = Study(
+            public_id=uuid4(),
+            patient_id=patient.id,
+            patient_public_id=patient.public_id,
+            study_instance_uid=study_uid,
+            source_kind="nifti-upload",
+            source_metadata={},
+            staging_status="processed",
+        )
+        session.add(study)
+        session.commit()
+        session.refresh(patient)
+        session.refresh(study)
+        session.expunge(patient)
+        session.expunge(study)
+        return patient, study
+
+
+def _seed_clinician(*, email: str) -> User:
+    with create_session_factory()() as session:
+        clinician = User(
+            email=email,
+            name="Results Clinician",
+            hashed_password="hash",
+            role="clinician",
+        )
+        session.add(clinician)
+        session.commit()
+        session.refresh(clinician)
+        session.expunge(clinician)
+        return clinician
+
+
 def test_result_service_returns_machine_readable_case_payload() -> None:
     study_id = _seed_results()
     payload = get_case_result_payload(study_id=study_id)
@@ -113,6 +162,118 @@ def test_results_endpoint_returns_not_found(client) -> None:
 def test_results_endpoint_rejects_invalid_study_ids(client) -> None:
     response = client.get("/api/v1/results/not-a-uuid")
     assert response.status_code == 400
+
+
+def test_results_studies_lists_only_assigned_patients(client) -> None:
+    assigned_patient, assigned_study = _seed_authorized_study(
+        pseudonym="PAT-RESULTS-ASSIGNED",
+        study_uid="results-assigned",
+    )
+    _other_patient, other_study = _seed_authorized_study(
+        pseudonym="PAT-RESULTS-OTHER",
+        study_uid="results-other",
+    )
+    clinician = _seed_clinician(email="results-list@test.local")
+    with create_session_factory()() as session:
+        session.add(Assignment(doctor_id=clinician.id, patient_id=assigned_patient.id))
+        session.commit()
+
+    client.app.dependency_overrides[get_current_user] = lambda: clinician
+    response = client.get("/api/v1/results/studies")
+
+    assert response.status_code == 200
+    returned_ids = {item["studyId"] for item in response.json()}
+    assert str(assigned_study.public_id) in returned_ids
+    assert str(other_study.public_id) not in returned_ids
+
+
+def test_results_detail_rejects_unassigned_clinician(client) -> None:
+    _patient, study = _seed_authorized_study(
+        pseudonym="PAT-RESULTS-DETAIL",
+        study_uid="results-detail",
+    )
+    clinician = _seed_clinician(email="results-detail@test.local")
+
+    client.app.dependency_overrides[get_current_user] = lambda: clinician
+    response = client.get(f"/api/v1/results/{study.public_id}")
+
+    assert response.status_code == 403
+
+
+def test_results_comparison_rejects_unassigned_clinician(client) -> None:
+    patient, baseline = _seed_authorized_study(
+        pseudonym="PAT-COMPARISON-RESULT",
+        study_uid="comparison-result-baseline",
+    )
+    with create_session_factory()() as session:
+        followup = Study(
+            public_id=uuid4(),
+            patient_id=patient.id,
+            patient_public_id=patient.public_id,
+            study_instance_uid="comparison-result-followup",
+            source_kind="nifti-upload",
+            source_metadata={},
+            staging_status="processed",
+        )
+        session.add(followup)
+        session.flush()
+        comparison = Comparison(
+            public_id=uuid4(),
+            study_a_id=baseline.id,
+            study_b_id=followup.id,
+            comparison_metadata={},
+        )
+        session.add(comparison)
+        session.commit()
+        comparison_id = str(comparison.public_id)
+        followup_id = str(followup.public_id)
+
+    location = resolve_artifact_location(
+        "derived", f"comparisons/{comparison_id}/comparison.json"
+    )
+    location.absolute_path.parent.mkdir(parents=True, exist_ok=True)
+    location.absolute_path.write_text(json.dumps({
+        "baseline_study_id": str(baseline.public_id),
+        "followup_study_id": followup_id,
+        "metrics": {},
+    }))
+    clinician = _seed_clinician(email="comparison-result@test.local")
+
+    client.app.dependency_overrides[get_current_user] = lambda: clinician
+    response = client.get(f"/api/v1/results/comparisons/{comparison_id}")
+
+    assert response.status_code == 403
+
+
+def test_results_comparison_rejects_cross_patient_record(client) -> None:
+    first_patient, baseline = _seed_authorized_study(
+        pseudonym="PAT-COMPARISON-CROSS-A",
+        study_uid="comparison-cross-a",
+    )
+    second_patient, followup = _seed_authorized_study(
+        pseudonym="PAT-COMPARISON-CROSS-B",
+        study_uid="comparison-cross-b",
+    )
+    clinician = _seed_clinician(email="comparison-cross@test.local")
+    with create_session_factory()() as session:
+        session.add_all([
+            Assignment(doctor_id=clinician.id, patient_id=first_patient.id),
+            Assignment(doctor_id=clinician.id, patient_id=second_patient.id),
+        ])
+        comparison = Comparison(
+            public_id=uuid4(),
+            study_a_id=baseline.id,
+            study_b_id=followup.id,
+            comparison_metadata={},
+        )
+        session.add(comparison)
+        session.commit()
+        comparison_id = str(comparison.public_id)
+
+    client.app.dependency_overrides[get_current_user] = lambda: clinician
+    response = client.get(f"/api/v1/results/comparisons/{comparison_id}")
+
+    assert response.status_code == 422
 
 
 def test_result_service_returns_empty_lesion_case_payload() -> None:

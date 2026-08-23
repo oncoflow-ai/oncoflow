@@ -88,3 +88,26 @@ def verify_patient_access(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this patient record",
         )
+
+
+def verify_study_access(
+    study: Study,
+    user: User,
+    session: Session,
+) -> None:
+    """Verify access to the patient who owns a study."""
+    if user.role == "admin":
+        return
+
+    patient = None
+    if study.patient_id is not None:
+        patient = session.query(Patient).filter(Patient.id == study.patient_id).one_or_none()
+    if patient is None:
+        patient = (
+            session.query(Patient)
+            .filter(Patient.public_id == study.patient_public_id)
+            .one_or_none()
+        )
+    if patient is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="study not found")
+    verify_patient_access(patient, user, session)

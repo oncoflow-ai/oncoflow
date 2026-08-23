@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user, get_session, verify_study_access
 from app.api.schemas.results import (
     ArtifactRefResponse,
     ComparisonMetricsResponse,
@@ -15,6 +18,7 @@ from app.api.schemas.results import (
     StudyListItemResponse,
 )
 from app.modules.artifacts.storage import resolve_artifact_location
+from app.infra.db.models import Comparison, Study, User
 from app.modules.results.service import (
     InvalidResultRequestError,
     ResultNotFoundError,
@@ -26,8 +30,10 @@ router = APIRouter(prefix="/results", tags=["results"])
 
 
 @router.get("/studies", response_model=list[StudyListItemResponse])
-def list_studies_endpoint() -> list[StudyListItemResponse]:
-    items = list_studies()
+def list_studies_endpoint(
+    current_user: User = Depends(get_current_user),
+) -> list[StudyListItemResponse]:
+    items = list_studies(current_user=current_user)
     return [
         StudyListItemResponse(
             study_id=item.study_id,
@@ -43,7 +49,31 @@ def list_studies_endpoint() -> list[StudyListItemResponse]:
 
 
 @router.get("/comparisons/{comparison_id}", response_model=ComparisonResponse)
-def get_comparison(comparison_id: str) -> ComparisonResponse:
+def get_comparison(
+    comparison_id: str,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> ComparisonResponse:
+    try:
+        parsed_comparison_id = UUID(comparison_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="comparison not found") from exc
+    comparison = (
+        session.query(Comparison)
+        .filter(Comparison.public_id == parsed_comparison_id)
+        .one_or_none()
+    )
+    if comparison is None:
+        raise HTTPException(status_code=404, detail="comparison not found")
+    baseline = session.query(Study).filter(Study.id == comparison.study_a_id).one_or_none()
+    followup = session.query(Study).filter(Study.id == comparison.study_b_id).one_or_none()
+    if baseline is None or followup is None:
+        raise HTTPException(status_code=404, detail="comparison not found")
+    verify_study_access(baseline, current_user, session)
+    verify_study_access(followup, current_user, session)
+    if baseline.patient_id is None or baseline.patient_id != followup.patient_id:
+        raise HTTPException(status_code=422, detail="studies must belong to the same patient")
+
     location = resolve_artifact_location(
         "derived", f"comparisons/{comparison_id}/comparison.json"
     )
@@ -78,10 +108,10 @@ def get_comparison(comparison_id: str) -> ComparisonResponse:
     )
     return ComparisonResponse(
         comparison_id=comparison_id,
-        baseline_study_id=raw.get("baseline_study_id", ""),
-        followup_study_id=raw.get("followup_study_id", ""),
-        baseline_acquired_at=None,
-        followup_acquired_at=None,
+        baseline_study_id=str(baseline.public_id),
+        followup_study_id=str(followup.public_id),
+        baseline_acquired_at=baseline.acquired_at,
+        followup_acquired_at=followup.acquired_at,
         metrics=metrics_payload,
         interpretation=(
             interpretation.get("label")
@@ -94,7 +124,20 @@ def get_comparison(comparison_id: str) -> ComparisonResponse:
 
 
 @router.get("/{study_id}", response_model=StoredCaseResultResponse)
-def get_case_results(study_id: str) -> StoredCaseResultResponse:
+def get_case_results(
+    study_id: str,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> StoredCaseResultResponse:
+    try:
+        parsed_study_id = UUID(study_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="study_id must be a valid UUID") from exc
+    study = session.query(Study).filter(Study.public_id == parsed_study_id).one_or_none()
+    if study is None:
+        raise HTTPException(status_code=404, detail="study not found")
+    verify_study_access(study, current_user, session)
+
     try:
         result = get_case_result_payload(study_id=study_id)
     except InvalidResultRequestError as exc:

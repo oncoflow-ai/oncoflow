@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from app.infra.db.models import Artifact, Job, Study
+from app.infra.db.models import Artifact, Assignment, Job, Study, User
 from app.infra.db.session import create_session_factory
 
 
@@ -20,10 +20,17 @@ class StudyListItem:
     has_results: bool
 
 
-def list_studies() -> list[StudyListItem]:
+def list_studies(*, current_user: User) -> list[StudyListItem]:
     session_factory = create_session_factory()
     with session_factory() as session:
-        studies = session.query(Study).order_by(Study.created_at.desc()).all()
+        query = session.query(Study)
+        if current_user.role != "admin":
+            assigned_patient_ids = (
+                session.query(Assignment.patient_id)
+                .filter(Assignment.doctor_id == current_user.id)
+            )
+            query = query.filter(Study.patient_id.in_(assigned_patient_ids))
+        studies = query.order_by(Study.created_at.desc()).all()
         items: list[StudyListItem] = []
         for study in studies:
             latest_job = (
