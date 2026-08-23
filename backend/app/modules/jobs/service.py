@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import logging
+import shutil
 import threading
 import zipfile
 from dataclasses import dataclass
@@ -125,6 +126,23 @@ def _resolve_or_create_patient(
     return patient
 
 
+def _authorize_existing_patient(patient_id: str | None, current_user: User | None) -> None:
+    """Resolve and authorize an explicit patient before any upload reaches storage."""
+    if patient_id is None:
+        return
+    session_factory = create_session_factory()
+    with session_factory() as session:
+        _resolve_or_create_patient(
+            session,
+            patient_id_input=patient_id,
+            current_user=current_user,
+        )
+
+
+def _audit_actor(current_user: User | None) -> str | None:
+    return str(current_user.public_id) if current_user is not None else None
+
+
 class JobService:
     def __init__(self) -> None:
         self._session_factory = create_session_factory()
@@ -144,6 +162,8 @@ class JobService:
         if content_type not in SUPPORTED_ARCHIVE_TYPES:
             raise SubmissionValidationError(415, "study_archive must be a zip upload")
 
+        _authorize_existing_patient(patient_id, current_user)
+
         archive_id = uuid4()
         archive_name = f"{archive_id}.zip"
         archive_location = resolve_artifact_location("raw", f"studies/{archive_id}/{archive_name}")
@@ -154,7 +174,11 @@ class JobService:
         extracted_location = resolve_artifact_location("raw", extracted_relative_path)
         extracted_location.absolute_path.mkdir(parents=True, exist_ok=True)
 
-        series_files = self._extract_archive(archive_bytes, extracted_location.absolute_path)
+        try:
+            series_files = self._extract_archive(archive_bytes, extracted_location.absolute_path)
+        except Exception:
+            shutil.rmtree(archive_location.absolute_path.parent, ignore_errors=True)
+            raise
 
         study_public_id = uuid4()
         submitted_at = datetime.now(timezone.utc)
@@ -223,6 +247,7 @@ class JobService:
             log_audit_event(
                 action="CREATE_STUDY",
                 resource_id=str(study.public_id),
+                actor=_audit_actor(current_user),
                 details={"job_id": str(job.public_id), "study_type": "dicom"},
             )
 
@@ -268,6 +293,8 @@ class JobService:
                 raise SubmissionValidationError(
                     415, "mask_file must be a .nii or .nii.gz NIfTI volume"
                 )
+
+        _authorize_existing_patient(patient_id, current_user)
 
         archive_id = uuid4()
         scan_relative_path = (
@@ -357,6 +384,7 @@ class JobService:
             log_audit_event(
                 action="CREATE_STUDY",
                 resource_id=str(study.public_id),
+                actor=_audit_actor(current_user),
                 details={"job_id": str(job.public_id), "study_type": "nifti"},
             )
 
@@ -386,6 +414,8 @@ class JobService:
     ) -> JobSubmissionResult:
         if not scan_bytes:
             raise SubmissionValidationError(400, "scan_file must not be empty")
+
+        _authorize_existing_patient(patient_id, current_user)
 
         safe_filename = Path(scan_filename or "demo-mri-upload.bin").name
         if not safe_filename:

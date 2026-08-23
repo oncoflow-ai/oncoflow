@@ -114,6 +114,12 @@ def test_ingestion_rejects_inaccessible_existing_patient_without_db_side_effects
             "studies": session.query(Study).count(),
             "jobs": session.query(Job).count(),
         }
+    storage_root = Path(get_settings().storage_root)
+    baseline_storage_paths = (
+        {path.relative_to(storage_root) for path in storage_root.rglob("*")}
+        if storage_root.exists()
+        else set()
+    )
 
     client.app.dependency_overrides[get_current_user] = lambda: clinician
     response = client.post(endpoint, files=files, data={"patient_id": patient_id})
@@ -124,6 +130,12 @@ def test_ingestion_rejects_inaccessible_existing_patient_without_db_side_effects
         assert session.query(Assignment).count() == baseline_counts["assignments"]
         assert session.query(Study).count() == baseline_counts["studies"]
         assert session.query(Job).count() == baseline_counts["jobs"]
+    current_storage_paths = (
+        {path.relative_to(storage_root) for path in storage_root.rglob("*")}
+        if storage_root.exists()
+        else set()
+    )
+    assert current_storage_paths == baseline_storage_paths
 
 
 def test_ingestion_allows_assigned_clinician_for_existing_patient(client) -> None:
