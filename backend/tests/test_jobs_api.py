@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.infra.db.models import Artifact, Assignment, Job, Patient, Study
@@ -114,6 +115,10 @@ def test_ingestion_rejects_inaccessible_existing_patient_without_db_side_effects
             "studies": session.query(Study).count(),
             "jobs": session.query(Job).count(),
         }
+    storage_root = Path(get_settings().storage_root)
+    baseline_storage_entries = {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    }
 
     client.app.dependency_overrides[get_current_user] = lambda: clinician
     response = client.post(endpoint, files=files, data={"patient_id": patient_id})
@@ -124,6 +129,9 @@ def test_ingestion_rejects_inaccessible_existing_patient_without_db_side_effects
         assert session.query(Assignment).count() == baseline_counts["assignments"]
         assert session.query(Study).count() == baseline_counts["studies"]
         assert session.query(Job).count() == baseline_counts["jobs"]
+    assert {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    } == baseline_storage_entries
 
 
 def test_ingestion_allows_assigned_clinician_for_existing_patient(client) -> None:
@@ -155,21 +163,49 @@ def test_ingestion_allows_assigned_clinician_for_existing_patient(client) -> Non
         assert session.query(Assignment).filter(Assignment.patient_id == patient.id).count() == 1
 
 
-def test_ingestion_rejects_unknown_explicit_patient_without_creating_one(client) -> None:
+@pytest.mark.parametrize(
+    ("endpoint", "files"),
+    [
+        (
+            "/api/v1/jobs/mri-ingestion",
+            {"study_archive": ("exam.zip", _zip_bytes({"exam/file.dcm": b"dicom"}), "application/zip")},
+        ),
+        (
+            "/api/v1/jobs/nifti-segmentation",
+            {"scan_file": ("scan.nii.gz", b"nifti-bytes", "application/gzip")},
+        ),
+        (
+            "/api/v1/jobs/demo-mri-segmentation",
+            {"scan_file": ("demo.nii.gz", b"demo-bytes", "application/gzip")},
+        ),
+    ],
+)
+def test_ingestion_rejects_unknown_explicit_patient_without_creating_one(
+    client,
+    endpoint: str,
+    files: dict,
+) -> None:
     assert client.get("/api/v1/health").status_code == 200
     session_factory = create_session_factory()
     with session_factory() as session:
         baseline_patient_count = session.query(Patient).count()
+    storage_root = Path(get_settings().storage_root)
+    baseline_storage_entries = {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    }
 
     response = client.post(
-        "/api/v1/jobs/demo-mri-segmentation",
-        files={"scan_file": ("demo.nii.gz", b"demo-bytes", "application/gzip")},
+        endpoint,
+        files=files,
         data={"patient_id": "PAT-DOES-NOT-EXIST"},
     )
 
     assert response.status_code == 404
     with session_factory() as session:
         assert session.query(Patient).count() == baseline_patient_count
+    assert {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    } == baseline_storage_entries
 
 
 def test_post_mri_ingestion_stages_archive_and_returns_queued_job(client) -> None:
@@ -213,6 +249,56 @@ def test_post_mri_ingestion_stages_archive_and_returns_queued_job(client) -> Non
 def test_post_mri_ingestion_rejects_invalid_payloads(client, files, expected_status: int) -> None:
     response = client.post("/api/v1/jobs/mri-ingestion", files=files)
     assert response.status_code == expected_status
+
+
+def test_invalid_zip_cleanup_leaves_no_raw_study_directory(client) -> None:
+    storage_root = Path(get_settings().storage_root)
+    baseline_storage_entries = {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    }
+
+    response = client.post(
+        "/api/v1/jobs/mri-ingestion",
+        files={"study_archive": ("invalid.zip", b"not-a-zip", "application/zip")},
+    )
+
+    assert response.status_code == 400
+    assert {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    } == baseline_storage_entries
+
+
+def test_nifti_database_failure_cleans_up_raw_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage_root = Path(get_settings().storage_root)
+    baseline_storage_entries = {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    }
+    original_commit = Session.commit
+
+    def fail_study_commit(session: Session) -> None:
+        if any(isinstance(value, Study) for value in session.identity_map.values()):
+            raise RuntimeError("database unavailable")
+        original_commit(session)
+
+    monkeypatch.setattr(Session, "commit", fail_study_commit)
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        asyncio.run(JobService().submit_nifti_study(
+            scan_filename="scan.nii.gz",
+            scan_bytes=b"nifti-bytes",
+            mask_filename=None,
+            mask_bytes=None,
+            source_label="failure cleanup",
+            acquired_at=None,
+        ))
+
+    assert {
+        path.relative_to(storage_root) for path in storage_root.rglob("*")
+    } == baseline_storage_entries
+    with create_session_factory()() as session:
+        assert session.query(Study).count() == 0
 
 
 def test_submission_dispatches_identifiers_not_raw_bytes(monkeypatch: pytest.MonkeyPatch) -> None:

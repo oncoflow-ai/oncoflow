@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import logging
+import shutil
 import threading
 import zipfile
 from dataclasses import dataclass
@@ -148,91 +149,91 @@ class JobService:
         archive_id = uuid4()
         archive_name = f"{archive_id}.zip"
         archive_location = resolve_artifact_location("raw", f"studies/{archive_id}/{archive_name}")
-        archive_location.absolute_path.parent.mkdir(parents=True, exist_ok=True)
-        archive_location.absolute_path.write_bytes(archive_bytes)
-
         extracted_relative_path = f"studies/{archive_id}/extracted"
         extracted_location = resolve_artifact_location("raw", extracted_relative_path)
-        extracted_location.absolute_path.mkdir(parents=True, exist_ok=True)
-
-        series_files = self._extract_archive(archive_bytes, extracted_location.absolute_path)
-
         study_public_id = uuid4()
         submitted_at = datetime.now(timezone.utc)
 
-        with self._session_factory() as session:
-            patient = _resolve_or_create_patient(
-                session, patient_id_input=patient_id, current_user=current_user
-            )
-            study = Study(
-                public_id=study_public_id,
-                patient_id=patient.id,
-                patient_public_id=patient.public_id,
-                study_instance_uid=f"staged-{study_public_id}",
-                source_kind="dicom-study",
-                source_metadata={
-                    "source_label": source_label,
-                    "uploaded_filename": filename,
-                    "archive_relative_path": archive_location.relative_path,
-                    "extracted_relative_path": extracted_location.relative_path,
-                    "series_file_count": series_files,
-                },
-                staging_status="staged",
-            )
-            session.add(study)
-            session.flush()
+        try:
+            with self._session_factory() as session:
+                patient = _resolve_or_create_patient(
+                    session, patient_id_input=patient_id, current_user=current_user
+                )
 
-            archive_artifact = Artifact(
-                study_id=study.id,
-                artifact_kind="raw-study-archive",
-                storage_root="raw",
-                relative_path=archive_location.relative_path,
-                source_metadata={"filename": filename},
-            )
-            extracted_artifact = Artifact(
-                study_id=study.id,
-                artifact_kind="extracted-study-root",
-                storage_root="raw",
-                relative_path=extracted_location.relative_path,
-                source_metadata={"file_count": series_files},
-            )
-            session.add_all([archive_artifact, extracted_artifact])
+                archive_location.absolute_path.parent.mkdir(parents=True, exist_ok=True)
+                archive_location.absolute_path.write_bytes(archive_bytes)
+                extracted_location.absolute_path.mkdir(parents=True, exist_ok=True)
+                series_files = self._extract_archive(
+                    archive_bytes, extracted_location.absolute_path
+                )
 
-            job = Job(
-                study_id=study.id,
-                job_type="ingest-study",
-                status="queued",
-                stage="staged",
-                created_at=submitted_at,
-                updated_at=submitted_at,
-            )
-            session.add(job)
-            session.flush()
-
-            session.add(
-                JobEvent(
+                study = Study(
+                    public_id=study_public_id,
+                    patient_id=patient.id,
+                    patient_public_id=patient.public_id,
+                    study_instance_uid=f"staged-{study_public_id}",
+                    source_kind="dicom-study",
+                    source_metadata={
+                        "source_label": source_label,
+                        "uploaded_filename": filename,
+                        "archive_relative_path": archive_location.relative_path,
+                        "extracted_relative_path": extracted_location.relative_path,
+                        "series_file_count": series_files,
+                    },
+                    staging_status="staged",
+                )
+                session.add(study)
+                session.flush()
+                session.add_all([
+                    Artifact(
+                        study_id=study.id,
+                        artifact_kind="raw-study-archive",
+                        storage_root="raw",
+                        relative_path=archive_location.relative_path,
+                        source_metadata={"filename": filename},
+                    ),
+                    Artifact(
+                        study_id=study.id,
+                        artifact_kind="extracted-study-root",
+                        storage_root="raw",
+                        relative_path=extracted_location.relative_path,
+                        source_metadata={"file_count": series_files},
+                    ),
+                ])
+                job = Job(
+                    study_id=study.id,
+                    job_type="ingest-study",
+                    status="queued",
+                    stage="staged",
+                    created_at=submitted_at,
+                    updated_at=submitted_at,
+                )
+                session.add(job)
+                session.flush()
+                session.add(JobEvent(
                     job_id=job.id,
                     status="queued",
                     stage="staged",
                     event_type="transition",
                     payload={"reason": "job submitted"},
                     created_at=submitted_at,
-                )
-            )
-            session.commit()
+                ))
+                session.commit()
+        except Exception:
+            shutil.rmtree(archive_location.absolute_path.parent, ignore_errors=True)
+            raise
 
-            log_audit_event(
-                action="CREATE_STUDY",
-                resource_id=str(study.public_id),
-                actor=str(current_user.public_id) if current_user is not None else None,
-                details={"job_id": str(job.public_id), "study_type": "dicom"},
-            )
-
-            dispatch = self._dispatch_worker(
-                job_id=str(job.public_id),
-                study_id=str(study.public_id),
-                extracted_relative_path=extracted_location.relative_path,
-            )
+        log_audit_event(
+            action="CREATE_STUDY",
+            resource_id=str(study.public_id),
+            actor=str(current_user.public_id) if current_user is not None else None,
+            details={"job_id": str(job.public_id), "study_type": "dicom"},
+        )
+        dispatch = self._dispatch_worker(
+            job_id=str(job.public_id),
+            study_id=str(study.public_id),
+            extracted_relative_path=extracted_location.relative_path,
+        )
 
         if not isinstance(dispatch, WorkerDispatchEnvelope):
             raise SubmissionValidationError(500, "worker dispatch failed")
@@ -276,97 +277,95 @@ class JobService:
             f"studies/{archive_id}/scan{_nifti_suffix(scan_filename)}"
         )
         scan_location = resolve_artifact_location("raw", scan_relative_path)
-        scan_location.absolute_path.parent.mkdir(parents=True, exist_ok=True)
-        scan_location.absolute_path.write_bytes(scan_bytes)
 
         mask_relative_path: str | None = None
+        mask_location = None
         if mask_bytes is not None:
             mask_relative_path = (
                 f"studies/{archive_id}/mask{_nifti_suffix(mask_filename or '')}"
             )
             mask_location = resolve_artifact_location("raw", mask_relative_path)
-            mask_location.absolute_path.parent.mkdir(parents=True, exist_ok=True)
-            mask_location.absolute_path.write_bytes(mask_bytes)
 
         study_public_id = uuid4()
         submitted_at = datetime.now(timezone.utc)
 
-        with self._session_factory() as session:
-            patient = _resolve_or_create_patient(
-                session, patient_id_input=patient_id, current_user=current_user
-            )
-            study = Study(
-                public_id=study_public_id,
-                patient_id=patient.id,
-                patient_public_id=patient.public_id,
-                study_instance_uid=f"nifti-{study_public_id}",
-                source_kind="nifti-upload",
-                source_metadata={
-                    "source_label": source_label,
-                    "uploaded_filename": scan_filename,
-                    "scan_relative_path": scan_location.relative_path,
-                    "mask_relative_path": mask_relative_path,
-                    "acquired_at": acquired_at.isoformat() if acquired_at else None,
-                },
-                staging_status="staged",
-                acquired_at=acquired_at,
-            )
-            session.add(study)
-            session.flush()
-
-            scan_artifact = Artifact(
-                study_id=study.id,
-                artifact_kind="nifti-source",
-                storage_root="raw",
-                relative_path=scan_location.relative_path,
-                source_metadata={"filename": scan_filename},
-            )
-            session.add(scan_artifact)
-
-            if mask_relative_path is not None:
-                mask_artifact = Artifact(
-                    study_id=study.id,
-                    artifact_kind="tumor-mask-input",
-                    storage_root="raw",
-                    relative_path=mask_relative_path,
-                    source_metadata={"filename": mask_filename},
+        try:
+            with self._session_factory() as session:
+                patient = _resolve_or_create_patient(
+                    session, patient_id_input=patient_id, current_user=current_user
                 )
-                session.add(mask_artifact)
 
-            job = Job(
-                study_id=study.id,
-                job_type="ingest-nifti",
-                status="queued",
-                stage="staged",
-                created_at=submitted_at,
-                updated_at=submitted_at,
-            )
-            session.add(job)
-            session.flush()
+                scan_location.absolute_path.parent.mkdir(parents=True, exist_ok=True)
+                scan_location.absolute_path.write_bytes(scan_bytes)
+                if mask_location is not None and mask_bytes is not None:
+                    mask_location.absolute_path.write_bytes(mask_bytes)
 
-            session.add(
-                JobEvent(
+                study = Study(
+                    public_id=study_public_id,
+                    patient_id=patient.id,
+                    patient_public_id=patient.public_id,
+                    study_instance_uid=f"nifti-{study_public_id}",
+                    source_kind="nifti-upload",
+                    source_metadata={
+                        "source_label": source_label,
+                        "uploaded_filename": scan_filename,
+                        "scan_relative_path": scan_location.relative_path,
+                        "mask_relative_path": mask_relative_path,
+                        "acquired_at": acquired_at.isoformat() if acquired_at else None,
+                    },
+                    staging_status="staged",
+                    acquired_at=acquired_at,
+                )
+                session.add(study)
+                session.flush()
+                session.add(Artifact(
+                    study_id=study.id,
+                    artifact_kind="nifti-source",
+                    storage_root="raw",
+                    relative_path=scan_location.relative_path,
+                    source_metadata={"filename": scan_filename},
+                ))
+                if mask_relative_path is not None:
+                    session.add(Artifact(
+                        study_id=study.id,
+                        artifact_kind="tumor-mask-input",
+                        storage_root="raw",
+                        relative_path=mask_relative_path,
+                        source_metadata={"filename": mask_filename},
+                    ))
+                job = Job(
+                    study_id=study.id,
+                    job_type="ingest-nifti",
+                    status="queued",
+                    stage="staged",
+                    created_at=submitted_at,
+                    updated_at=submitted_at,
+                )
+                session.add(job)
+                session.flush()
+                session.add(JobEvent(
                     job_id=job.id,
                     status="queued",
                     stage="staged",
                     event_type="transition",
                     payload={"reason": "nifti job submitted"},
                     created_at=submitted_at,
-                )
-            )
-            session.commit()
+                ))
+                session.commit()
+        except Exception:
+            shutil.rmtree(scan_location.absolute_path.parent, ignore_errors=True)
+            raise
 
-            log_audit_event(
-                action="CREATE_STUDY",
-                resource_id=str(study.public_id),
-                actor=str(current_user.public_id) if current_user is not None else None,
-                details={"job_id": str(job.public_id), "study_type": "nifti"},
-            )
-
-            self._dispatch_nifti_worker(
-                job_id=str(job.public_id),
-                study_id=str(study.public_id),
-            )
+        log_audit_event(
+            action="CREATE_STUDY",
+            resource_id=str(study.public_id),
+            actor=str(current_user.public_id) if current_user is not None else None,
+            details={"job_id": str(job.public_id), "study_type": "nifti"},
+        )
+        self._dispatch_nifti_worker(
+            job_id=str(job.public_id),
+            study_id=str(study.public_id),
+        )
 
         return JobSubmissionResult(
             job_public_id=job.public_id,
