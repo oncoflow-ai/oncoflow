@@ -120,7 +120,7 @@ def bootstrap_users() -> None:
             {"email": "dr.cohen@ichilov.gov.il", "name": "Dr. D. Cohen", "password": "password", "role": "doctor"},
             {"email": "radiology@oncoflow.local", "name": "Alex Rahman", "password": "password", "role": "radiologist"},
             {"email": "clinician@oncoflow.local", "name": "Noa Clinical", "password": "password", "role": "clinician"},
-            {"email": "sarah.jenkins@example.test", "name": "Sarah Jenkins", "password": "patient123", "role": "patient"}
+            {"email": "david.levi@example.test", "name": "David Levi", "password": "patient123", "role": "patient"}
         ]
         demo_patients = [
             {

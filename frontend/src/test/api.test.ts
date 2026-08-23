@@ -1,6 +1,6 @@
 import { getPatients, getPatient } from '@/api/patients'
 import { getScans } from '@/api/scans'
-import { getSummary } from '@/api/reports'
+import { getSummary, listReports, saveMriAnalysisReport } from '@/api/reports'
 
 describe('getPatients()', () => {
   it('returns 9 patients', async () => {
@@ -35,5 +35,21 @@ describe('getSummary()', () => {
     const s = await getSummary('P-1029')
     expect(s.patientId).toBe('P-1029')
     expect(s.text.length).toBeGreaterThan(100)
+  })
+})
+
+describe('MRI analysis reports', () => {
+  it('saves a completed analysis so it appears in the patient report list', async () => {
+    sessionStorage.removeItem('oncoflow_mock_reports')
+    saveMriAnalysisReport('P-1029', 'study-123')
+
+    const reports = await listReports('P-1029')
+    expect(reports).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        patientId: 'P-1029',
+        studyId: 'study-123',
+        kind: 'mri-analysis',
+      }),
+    ]))
   })
 })

@@ -12,7 +12,7 @@ import BackendOperatorWorkspace from '@/components/dashboard/BackendOperatorWork
 import LongitudinalComparisonPanel from '@/components/dashboard/LongitudinalComparisonPanel'
 import { getPatient } from '@/api/patients'
 import { getScans } from '@/api/scans'
-import { generateReport, getSummary, listReports } from '@/api/reports'
+import { generateReport, getSummary, listReports, saveMriAnalysisReport } from '@/api/reports'
 import { formatDate, formatVolume, calcVolumeDeltaPct, cn } from '@/lib/utils'
 import { ScanLine } from 'lucide-react'
 
@@ -137,11 +137,6 @@ export default function DoctorPatientDashboardPage() {
     : null
 
   const allAnnotated = scans.length > 0 && scans.every(s => s.isAnnotated)
-
-  const scopeCopy =
-    patient?.linkedStudyIds?.length
-      ? undefined
-      : 'Studies here come from the live demo backend (all completed analyses). Complete radiologist uploads first so P01 labels appear; roster patients are not linked to backend UUIDs until that feature ships.'
 
   if (patientQuery.isError) {
     return (
@@ -293,9 +288,14 @@ export default function DoctorPatientDashboardPage() {
             headingTitle="Upload MRI — segmentation pipeline"
             headingDescription="After ingestion completes, we attempt an automatic longitudinal comparison between the earliest and latest backend studies that have stored results (optionally filtered by this patient's linkedStudyIds when configured)."
             prefilledSourceLabel={patient ? `${patient.id} · ${patient.name}` : ''}
-            onJobReachedTerminal={() => {
+            onJobReachedTerminal={payload => {
               queryClient.invalidateQueries({ queryKey: ['backend-studies'] })
               queryClient.invalidateQueries({ queryKey: ['scans', id] })
+              if (payload.status === 'completed' && id) {
+                saveMriAnalysisReport(id, payload.studyId)
+                queryClient.invalidateQueries({ queryKey: ['reports', id] })
+                navigate(`/patients/${id}/results/${payload.studyId}`)
+              }
             }}
           />
         </div>
@@ -318,7 +318,7 @@ export default function DoctorPatientDashboardPage() {
           </div>
 
           <div className="text-[12px] font-mono font-bold tracking-widest uppercase text-text2">
-            Previous reports (mock storage)
+            Clinical reports
           </div>
 
           {reportsQuery.isLoading ? (
@@ -334,6 +334,15 @@ export default function DoctorPatientDashboardPage() {
                     {new Date(r.generatedAt).toLocaleString()}
                   </div>
                   <p className="text-[13px] text-text2 mt-2 leading-relaxed">{r.summarySnippet}</p>
+                  {r.studyId && (
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/patients/${id}/results/${r.studyId}`)}
+                      className="mt-3 border border-teal/40 px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-widest text-teal transition-colors hover:bg-teal/10"
+                    >
+                      Open analysis
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -343,4 +352,3 @@ export default function DoctorPatientDashboardPage() {
     </div>
   )
 }
-

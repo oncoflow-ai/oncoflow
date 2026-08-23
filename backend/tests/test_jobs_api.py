@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import threading
 import zipfile
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -11,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.infra.db.models import Artifact, Assignment, AuditLog, Job, Patient, Study, User
-from app.infra.db.session import create_session_factory
+from app.infra.db.session import create_session_factory, get_engine
 from app.modules.jobs.service import JobService
 from app.modules.jobs.state_machine import transition_job
 from app.modules.jobs.worker_tasks import (
@@ -561,6 +562,61 @@ def test_post_demo_mri_segmentation_rejects_invalid_payloads(
     )
 
     assert response.status_code == expected_status
+
+
+def test_demo_mri_worker_exposes_running_state_before_delay(
+    client,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class StopAfterRunningStateCheck(Exception):
+        pass
+
+    monkeypatch.setenv("ONCOFLOW_DATABASE_URL", f"sqlite+pysqlite:///{tmp_path / 'polling.sqlite3'}")
+    get_settings.cache_clear()
+    get_engine.cache_clear()
+
+    submitted = client.post(
+        "/api/v1/jobs/demo-mri-segmentation",
+        files={"scan_file": ("class-demo.nii.gz", b"mri-bytes", "application/gzip")},
+        data={"source_label": "Class demo MRI", "acquired_at": "2024-01-15"},
+    ).json()
+    job_id = UUID(submitted["jobId"])
+    delay_entered = threading.Event()
+    release_delay = threading.Event()
+    worker_errors: list[Exception] = []
+
+    def pause_delay(_delay_seconds: float) -> None:
+        delay_entered.set()
+        assert release_delay.wait(timeout=3)
+        raise StopAfterRunningStateCheck
+
+    monkeypatch.setattr(
+        "app.modules.jobs.worker_tasks.time.sleep",
+        pause_delay,
+    )
+
+    def run_worker() -> None:
+        try:
+            execute_demo_mri_segmentation_job(job_id=str(job_id))
+        except StopAfterRunningStateCheck as exc:
+            worker_errors.append(exc)
+
+    worker_thread = threading.Thread(target=run_worker)
+    worker_thread.start()
+    assert delay_entered.wait(timeout=3)
+
+    try:
+        with create_session_factory()() as polling_session:
+            polled_job = polling_session.query(Job).filter(Job.public_id == job_id).one()
+            assert polled_job.status == "running"
+            assert polled_job.stage == "demo-inference"
+    finally:
+        release_delay.set()
+        worker_thread.join(timeout=3)
+
+    assert not worker_thread.is_alive()
+    assert len(worker_errors) == 1
 
 
 def test_demo_mri_segmentation_completes_and_exposes_report(

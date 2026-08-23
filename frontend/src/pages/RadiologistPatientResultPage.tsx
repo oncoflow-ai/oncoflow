@@ -3,13 +3,11 @@ import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   ArrowLeft,
-  Brain,
   ChevronLeft,
   ChevronRight,
   ClipboardList,
   FileScan,
   ScanSearch,
-  ShieldCheck,
 } from 'lucide-react'
 import TopNav from '@/components/layout/TopNav'
 import ErrorBanner from '@/components/shared/ErrorBanner'
@@ -17,7 +15,8 @@ import EmptyState from '@/components/shared/EmptyState'
 import StatBlock from '@/components/shared/StatBlock'
 import { getPatient } from '@/api/patients'
 import { getStudyResults } from '@/api/backendWorkspace'
-import { cn, formatDate, formatVolume } from '@/lib/utils'
+import { cn, formatVolume } from '@/lib/utils'
+import { useAuthStore } from '@/store/authStore'
 import type { BackendCaseResult, BackendLesionResult } from '@/types'
 
 interface DemoReport {
@@ -47,26 +46,6 @@ function readReport(result?: BackendCaseResult): DemoReport | null {
 
 function primaryLesion(result?: BackendCaseResult): BackendLesionResult | null {
   return result?.lesions[0] ?? null
-}
-
-function LesionBox({ lesion }: { lesion: BackendLesionResult }) {
-  const bbox = lesion.boundingBox
-  return (
-    <div className="grid gap-2 text-[12px] text-text2 sm:grid-cols-3">
-      <div className="border border-border2 bg-bg px-3 py-2">
-        <span className="font-mono text-[10px] uppercase tracking-widest text-text3">X</span>
-        <div className="mt-1 font-mono text-text1">{bbox.xMin} - {bbox.xMax}</div>
-      </div>
-      <div className="border border-border2 bg-bg px-3 py-2">
-        <span className="font-mono text-[10px] uppercase tracking-widest text-text3">Y</span>
-        <div className="mt-1 font-mono text-text1">{bbox.yMin} - {bbox.yMax}</div>
-      </div>
-      <div className="border border-border2 bg-bg px-3 py-2">
-        <span className="font-mono text-[10px] uppercase tracking-widest text-text3">Z</span>
-        <div className="mt-1 font-mono text-text1">{bbox.zMin} - {bbox.zMax}</div>
-      </div>
-    </div>
-  )
 }
 
 function SegmentationPreview({ lesion }: { lesion: BackendLesionResult }) {
@@ -195,6 +174,7 @@ function fallbackReport(lesion: BackendLesionResult): Required<DemoReport> {
 
 export default function RadiologistPatientResultPage() {
   const { patientId, studyId } = useParams<{ patientId: string; studyId: string }>()
+  const user = useAuthStore(state => state.user)
 
   const patientQuery = useQuery({
     queryKey: ['patient', patientId],
@@ -216,7 +196,9 @@ export default function RadiologistPatientResultPage() {
     () => lesion ? { ...fallbackReport(lesion), ...report } : null,
     [lesion, report]
   )
-  const runner = lesion?.metadata?.runner as Record<string, unknown> | undefined
+  const returnTo = user?.role === 'radiologist'
+    ? '/radiologist'
+    : `/doctor/patients/${patientId}?tab=reports`
 
   return (
     <div className="min-h-screen bg-bg flex flex-col">
@@ -227,11 +209,11 @@ export default function RadiologistPatientResultPage() {
           <div className="flex flex-col gap-3 border-b border-border pb-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <Link
-                to="/radiologist"
+                to={returnTo}
                 className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-widest text-text3 hover:text-teal"
               >
                 <ArrowLeft size={14} />
-                Upload another MRI
+                {user?.role === 'radiologist' ? 'Upload another MRI' : 'Back to reports'}
               </Link>
               <h1 className="mt-3 font-sans text-[28px] font-bold text-text1">
                 Segmentation result
@@ -289,8 +271,8 @@ export default function RadiologistPatientResultPage() {
                 />
               </section>
 
-              <div className="grid gap-5 lg:grid-cols-[1.15fr,0.85fr]">
-                <section className="border border-border bg-surface p-5 lg:col-span-2">
+              <div className="grid gap-5 lg:grid-cols-2">
+                <section className="border border-border bg-surface p-5">
                   <div className="mb-4 flex items-center gap-2 font-mono text-[12px] font-bold uppercase tracking-widest text-text2">
                     <ScanSearch size={15} />
                     Segmentation viewer
@@ -379,49 +361,7 @@ export default function RadiologistPatientResultPage() {
                   )}
                 </section>
 
-                <section className="border border-border bg-surface p-5">
-                  <div className="mb-4 flex items-center gap-2 font-mono text-[12px] font-bold uppercase tracking-widest text-text2">
-                    <Brain size={15} />
-                    Lesion package
-                  </div>
-                  <div className="space-y-4">
-                    <div>
-                      <div className="font-mono text-[11px] uppercase tracking-widest text-text3">Lesion ID</div>
-                      <div className="mt-1 font-mono text-[18px] text-text1">{lesion.lesionId}</div>
-                    </div>
-                    <LesionBox lesion={lesion} />
-                    <div>
-                      <div className="mb-2 font-mono text-[11px] uppercase tracking-widest text-text3">
-                        Mask artifact
-                      </div>
-                      <code className="block break-all border border-border2 bg-bg px-3 py-2 text-[11px] text-text2">
-                        {lesion.maskArtifact.storageRoot}/{lesion.maskArtifact.relativePath}
-                      </code>
-                    </div>
-                  </div>
-                </section>
               </div>
-
-              <section className="border border-border bg-surface p-5">
-                <div className="mb-3 flex items-center gap-2 font-mono text-[12px] font-bold uppercase tracking-widest text-text2">
-                  <ShieldCheck size={15} />
-                  Model provenance
-                </div>
-                <div className="grid gap-3 text-[12px] text-text2 md:grid-cols-3">
-                  <div className="border border-border2 bg-bg px-3 py-2">
-                    <div className="font-mono text-[10px] uppercase tracking-widest text-text3">Model</div>
-                    <div className="mt-1 font-mono text-text1">{String(runner?.model_id ?? 'unknown')}</div>
-                  </div>
-                  <div className="border border-border2 bg-bg px-3 py-2">
-                    <div className="font-mono text-[10px] uppercase tracking-widest text-text3">Backend</div>
-                    <div className="mt-1 font-mono text-text1">{String(runner?.execution_backend ?? 'unknown')}</div>
-                  </div>
-                  <div className="border border-border2 bg-bg px-3 py-2">
-                    <div className="font-mono text-[10px] uppercase tracking-widest text-text3">Generated</div>
-                    <div className="mt-1 font-mono text-text1">{formatDate(new Date().toISOString())}</div>
-                  </div>
-                </div>
-              </section>
             </>
           )}
         </div>

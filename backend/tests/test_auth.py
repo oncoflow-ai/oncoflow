@@ -28,6 +28,30 @@ def test_login_success(monkeypatch):
         assert data["user"]["email"] == "admin@oncoflow.local"
         assert data["user"]["role"] == "admin"
 
+
+def test_login_success_for_david_levi_demo_account(monkeypatch):
+    monkeypatch.setenv("ONCOFLOW_DATABASE_URL", "sqlite:///:memory:")
+    _enable_demo_seed(monkeypatch)
+    app = create_app()
+    bootstrap_users()
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/auth/login",
+            data={"username": "david.levi@example.test", "password": "patient123"},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["access_token"]
+    assert data["token_type"] == "bearer"
+    assert data["user"] == {
+        "id": data["user"]["id"],
+        "email": "david.levi@example.test",
+        "name": "David Levi",
+        "role": "patient",
+    }
+
 def test_login_failure(monkeypatch):
     monkeypatch.setenv("ONCOFLOW_DATABASE_URL", "sqlite:///:memory:")
     _enable_demo_seed(monkeypatch)
