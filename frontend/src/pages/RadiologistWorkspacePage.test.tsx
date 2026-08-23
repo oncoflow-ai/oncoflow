@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import RadiologistWorkspacePage from '@/pages/RadiologistWorkspacePage'
@@ -75,6 +75,11 @@ const DEMO_PATIENT = {
   lastScanDate: '2026-04-12',
 }
 
+function PatientChartLocation() {
+  const location = useLocation()
+  return <div>Patient chart: {location.pathname}{location.search}</div>
+}
+
 function renderRadiologist() {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -88,7 +93,7 @@ function renderRadiologist() {
       <MemoryRouter initialEntries={['/radiologist']}>
         <Routes>
           <Route path="/radiologist" element={<RadiologistWorkspacePage />} />
-          <Route path="/doctor/patients/:id" element={<div>Patient Chart</div>} />
+          <Route path="/doctor/patients/:id" element={<PatientChartLocation />} />
           <Route path="/patients/:patientId/results/:studyId" element={<div>Clinical result: P-1001 / study-1</div>} />
         </Routes>
       </MemoryRouter>
@@ -130,18 +135,14 @@ describe('RadiologistWorkspacePage', () => {
     })
   })
 
-  it('shows roster until a patient is selected', async () => {
-    renderRadiologist()
-    expect(await screen.findByText(/Choose a patient row/i)).toBeInTheDocument()
-    expect(screen.queryByLabelText(/NIfTI Scan/i)).not.toBeInTheDocument()
-  })
-
-  it('shows upload workspace after selecting a patient', async () => {
+  it('keeps the landing page roster-only and opens the selected patient Upload MRI chart', async () => {
     renderRadiologist()
     const user = userEvent.setup()
     await selectAdaPatient(user)
-    expect(await screen.findByLabelText(/NIfTI Scan/i)).toBeInTheDocument()
-    expect(screen.getByText(/Upload MRI — segmentation pipeline/i)).toBeInTheDocument()
+
+    expect(await screen.findByText('Patient chart: /doctor/patients/P-1001?tab=upload')).toBeInTheDocument()
+    expect(screen.queryByText(/Choose a patient row/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Upload MRI — segmentation pipeline/i)).not.toBeInTheDocument()
   })
 
   it('submits a NIfTI scan + mask + acquisition date to the backend', async () => {
