@@ -4,6 +4,9 @@ from uuid import uuid4
 
 from app.modules.jobs.contracts import ProcessingJobContract, StagedStudyReference
 from app.main import PhiSafeLogFilter
+from app.infra.db.models import Patient, User
+from app.infra.db.session import create_session_factory
+from fastapi.testclient import TestClient
 
 
 def test_app_exposes_health_and_readiness_routes(client) -> None:
@@ -56,3 +59,18 @@ def test_job_contracts_are_importable() -> None:
     assert running_contract.study.storage_key == "staging/study-1"
     assert running_contract.status == "running"
     assert running_contract.stage == "validate"
+
+
+def test_demo_bootstrap_is_disabled_without_development_opt_in(monkeypatch) -> None:
+    monkeypatch.setenv("ONCOFLOW_ENVIRONMENT", "production")
+    monkeypatch.delenv("ONCOFLOW_BOOTSTRAP_DEMO_DATA", raising=False)
+    from app.core.config import get_settings
+    from app.main import create_app
+
+    get_settings.cache_clear()
+    with TestClient(create_app()):
+        pass
+
+    with create_session_factory()() as session:
+        assert session.query(User).count() == 0
+        assert session.query(Patient).count() == 0

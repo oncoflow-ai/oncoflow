@@ -208,8 +208,13 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    if hasattr(app, "add_event_handler"):
+    if (
+        hasattr(app, "add_event_handler")
+        and settings.environment == "development"
+        and settings.bootstrap_demo_data
+    ):
         app.add_event_handler("startup", bootstrap_users)
+    if hasattr(app, "add_event_handler"):
         app.add_event_handler("shutdown", shutdown_background_workers)
     app.include_router(api_router, prefix=settings.api_prefix)
     return app

@@ -39,6 +39,7 @@ class Settings:
     jwt_algorithm: str = "HS256"
     demo_job_delay_seconds: float = 20.0
     demo_ground_truth_mask_path: str | None = None
+    bootstrap_demo_data: bool = False
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -109,6 +110,10 @@ class Settings:
             ),
             demo_ground_truth_mask_path=get_optional_str(
                 "ONCOFLOW_DEMO_GROUND_TRUTH_MASK_PATH"
+            ),
+            bootstrap_demo_data=get_bool(
+                "ONCOFLOW_BOOTSTRAP_DEMO_DATA",
+                cls.bootstrap_demo_data,
             ),
         )
 
