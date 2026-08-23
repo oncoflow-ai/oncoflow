@@ -14,12 +14,20 @@ class BenchmarkModelSpec:
 
 BENCHMARK_MODELS = (
     BenchmarkModelSpec(
+        model_id="nnunet-v1-brats",
+        family="nnU-Net v1 BraTS",
+        selection_role="baseline",
+        automation_mode="automatic",
+        notes="Primary supervised production baseline.",
+    ),
+    BenchmarkModelSpec(
         model_id="nnunet-v2-resenc",
         family="nnU-Net v2 residual encoder",
         selection_role="baseline",
         automation_mode="automatic",
         notes="Primary supervised production baseline for Phase 2.",
     ),
+
     BenchmarkModelSpec(
         model_id="nnunet-2d",
         family="nnU-Net v2 2D",

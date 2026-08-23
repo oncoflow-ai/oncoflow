@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import logging
+import shutil
 import threading
 import zipfile
 from dataclasses import dataclass
@@ -23,7 +24,7 @@ from app.modules.jobs.worker_tasks import (
     forget_worker_thread,
     register_worker_thread,
 )
-from app.infra.db.models import Artifact, Job, JobEvent, Study
+from app.infra.db.models import Artifact, Assignment, Job, JobEvent, Patient, Study, User
 from app.infra.db.session import create_session_factory
 
 logger = logging.getLogger(__name__)
@@ -71,6 +72,77 @@ class JobStatusResult(JobSubmissionResult):
     error: JobErrorPayload | None = None
 
 
+def _resolve_or_create_patient(
+    session,
+    patient_id_input: str | None = None,
+    current_user: User | None = None,
+) -> Patient:
+    patient: Patient | None = None
+    if patient_id_input:
+        try:
+            puuid = UUID(patient_id_input)
+            patient = session.query(Patient).filter(Patient.public_id == puuid).first()
+        except ValueError:
+            pass
+        if not patient:
+            patient = session.query(Patient).filter(Patient.pseudonym == patient_id_input).first()
+        if patient is None:
+            raise SubmissionValidationError(404, f"Patient {patient_id_input} not found")
+
+        if current_user is None:
+            raise SubmissionValidationError(403, "You do not have access to this patient record")
+        if current_user.role != "admin":
+            existing_assign = (
+                session.query(Assignment)
+                .filter(
+                    Assignment.doctor_id == current_user.id,
+                    Assignment.patient_id == patient.id,
+                )
+                .first()
+            )
+            if existing_assign is None:
+                raise SubmissionValidationError(
+                    403, "You do not have access to this patient record"
+                )
+        return patient
+
+    patient = Patient(
+        public_id=uuid4(),
+        pseudonym=f"PAT-{uuid4().hex[:6].upper()}",
+        status="active",
+    )
+    session.add(patient)
+    session.flush()
+
+    if current_user is not None and current_user.role in {"doctor", "clinician", "radiologist"}:
+        session.add(
+            Assignment(
+                doctor_id=current_user.id,
+                patient_id=patient.id,
+            )
+        )
+        session.flush()
+
+    return patient
+
+
+def _authorize_existing_patient(patient_id: str | None, current_user: User | None) -> None:
+    """Resolve and authorize an explicit patient before any upload reaches storage."""
+    if patient_id is None:
+        return
+    session_factory = create_session_factory()
+    with session_factory() as session:
+        _resolve_or_create_patient(
+            session,
+            patient_id_input=patient_id,
+            current_user=current_user,
+        )
+
+
+def _audit_actor(current_user: User | None) -> str | None:
+    return str(current_user.public_id) if current_user is not None else None
+
+
 class JobService:
     def __init__(self) -> None:
         self._session_factory = create_session_factory()
@@ -82,30 +154,42 @@ class JobService:
         content_type: str | None,
         archive_bytes: bytes,
         source_label: str | None,
+        patient_id: str | None = None,
+        current_user: User | None = None,
     ) -> JobSubmissionResult:
         if not archive_bytes:
             raise SubmissionValidationError(400, "study_archive must not be empty")
         if content_type not in SUPPORTED_ARCHIVE_TYPES:
             raise SubmissionValidationError(415, "study_archive must be a zip upload")
 
+        _authorize_existing_patient(patient_id, current_user)
+
         archive_id = uuid4()
         archive_name = f"{archive_id}.zip"
         archive_location = resolve_artifact_location("raw", f"studies/{archive_id}/{archive_name}")
-        archive_location.absolute_path.parent.mkdir(parents=True, exist_ok=True)
-        archive_location.absolute_path.write_bytes(archive_bytes)
+        try:
+            archive_location.absolute_path.parent.mkdir(parents=True, exist_ok=True)
+            archive_location.absolute_path.write_bytes(archive_bytes)
 
-        extracted_relative_path = f"studies/{archive_id}/extracted"
-        extracted_location = resolve_artifact_location("raw", extracted_relative_path)
-        extracted_location.absolute_path.mkdir(parents=True, exist_ok=True)
-
-        series_files = self._extract_archive(archive_bytes, extracted_location.absolute_path)
+            extracted_relative_path = f"studies/{archive_id}/extracted"
+            extracted_location = resolve_artifact_location("raw", extracted_relative_path)
+            extracted_location.absolute_path.mkdir(parents=True, exist_ok=True)
+            series_files = self._extract_archive(archive_bytes, extracted_location.absolute_path)
+        except Exception:
+            shutil.rmtree(archive_location.absolute_path.parent, ignore_errors=True)
+            raise
 
         study_public_id = uuid4()
         submitted_at = datetime.now(timezone.utc)
 
         with self._session_factory() as session:
+            patient = _resolve_or_create_patient(
+                session, patient_id_input=patient_id, current_user=current_user
+            )
             study = Study(
                 public_id=study_public_id,
+                patient_id=patient.id,
+                patient_public_id=patient.public_id,
                 study_instance_uid=f"staged-{study_public_id}",
                 source_kind="dicom-study",
                 source_metadata={
@@ -162,6 +246,7 @@ class JobService:
             log_audit_event(
                 action="CREATE_STUDY",
                 resource_id=str(study.public_id),
+                actor=_audit_actor(current_user),
                 details={"job_id": str(job.public_id), "study_type": "dicom"},
             )
 
@@ -191,6 +276,8 @@ class JobService:
         mask_bytes: bytes | None,
         source_label: str | None,
         acquired_at: date | None,
+        patient_id: str | None = None,
+        current_user: User | None = None,
     ) -> JobSubmissionResult:
         if not scan_bytes:
             raise SubmissionValidationError(400, "scan_file must not be empty")
@@ -205,6 +292,8 @@ class JobService:
                 raise SubmissionValidationError(
                     415, "mask_file must be a .nii or .nii.gz NIfTI volume"
                 )
+
+        _authorize_existing_patient(patient_id, current_user)
 
         archive_id = uuid4()
         scan_relative_path = (
@@ -227,8 +316,13 @@ class JobService:
         submitted_at = datetime.now(timezone.utc)
 
         with self._session_factory() as session:
+            patient = _resolve_or_create_patient(
+                session, patient_id_input=patient_id, current_user=current_user
+            )
             study = Study(
                 public_id=study_public_id,
+                patient_id=patient.id,
+                patient_public_id=patient.public_id,
                 study_instance_uid=f"nifti-{study_public_id}",
                 source_kind="nifti-upload",
                 source_metadata={
@@ -289,6 +383,7 @@ class JobService:
             log_audit_event(
                 action="CREATE_STUDY",
                 resource_id=str(study.public_id),
+                actor=_audit_actor(current_user),
                 details={"job_id": str(job.public_id), "study_type": "nifti"},
             )
 
@@ -313,9 +408,13 @@ class JobService:
         content_type: str | None,
         source_label: str | None,
         acquired_at: date | None,
+        patient_id: str | None = None,
+        current_user: User | None = None,
     ) -> JobSubmissionResult:
         if not scan_bytes:
             raise SubmissionValidationError(400, "scan_file must not be empty")
+
+        _authorize_existing_patient(patient_id, current_user)
 
         safe_filename = Path(scan_filename or "demo-mri-upload.bin").name
         if not safe_filename:
@@ -325,8 +424,13 @@ class JobService:
         submitted_at = datetime.now(timezone.utc)
 
         with self._session_factory() as session:
+            patient = _resolve_or_create_patient(
+                session, patient_id_input=patient_id, current_user=current_user
+            )
             study = Study(
                 public_id=study_public_id,
+                patient_id=patient.id,
+                patient_public_id=patient.public_id,
                 study_instance_uid=f"demo-{study_public_id}",
                 source_kind="demo-mri-upload",
                 source_metadata={
@@ -342,6 +446,7 @@ class JobService:
             )
             session.add(study)
             session.flush()
+
 
             job = Job(
                 study_id=study.id,

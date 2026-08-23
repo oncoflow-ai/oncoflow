@@ -12,11 +12,54 @@ from sqlalchemy.types import Uuid
 from app.infra.db.base import Base, utc_now
 
 
+class Patient(Base):
+    __tablename__ = "patients"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    public_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), unique=True, default=uuid4, index=True)
+    pseudonym: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    dob: Mapped[date | None] = mapped_column(Date, nullable=True)
+    gender: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    diagnosis: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    diagnosis_location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="active")
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+    studies: Mapped[list["Study"]] = relationship(
+        back_populates="patient",
+        cascade="all, delete-orphan",
+    )
+    doctor_assignments: Mapped[list["Assignment"]] = relationship(
+        back_populates="patient",
+        cascade="all, delete-orphan",
+    )
+
+
+class Assignment(Base):
+    __tablename__ = "assignments"
+    __table_args__ = (UniqueConstraint("doctor_id", "patient_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    doctor_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    patient_id: Mapped[int] = mapped_column(ForeignKey("patients.id"), index=True)
+    assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    doctor: Mapped["User"] = relationship(back_populates="patient_assignments")
+    patient: Mapped["Patient"] = relationship(back_populates="doctor_assignments")
+
+
 class Study(Base):
     __tablename__ = "studies"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     public_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), unique=True, default=uuid4, index=True)
+    patient_id: Mapped[int | None] = mapped_column(ForeignKey("patients.id"), nullable=True, index=True)
     patient_public_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), default=uuid4, index=True)
     study_instance_uid: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     source_kind: Mapped[str] = mapped_column(String(64))
@@ -30,6 +73,7 @@ class Study(Base):
         onupdate=utc_now,
     )
 
+    patient: Mapped[Patient | None] = relationship(back_populates="studies")
     series: Mapped[list["Series"]] = relationship(
         back_populates="study",
         cascade="all, delete-orphan",
@@ -181,6 +225,11 @@ class User(Base):
         onupdate=utc_now,
     )
 
+    patient_assignments: Mapped[list["Assignment"]] = relationship(
+        back_populates="doctor",
+        cascade="all, delete-orphan",
+    )
+
 
 class PatientDocument(Base):
     __tablename__ = "patient_documents"
@@ -225,4 +274,3 @@ class PatientSummary(Base):
     )
 
     study: Mapped[Study | None] = relationship()
-

@@ -2,14 +2,18 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from sqlalchemy.orm import Session
+from uuid import UUID
 
+from app.api.deps import find_study_for_access, get_current_user, get_session, verify_study_access
 from app.api.schemas.jobs import (
     JobStatusResponse,
     JobSubmissionResponse,
     LongitudinalComparisonRequest,
 )
 from app.api.schemas.results import ComparisonResponse
+from app.infra.db.models import Job, Study, User
 from app.modules.jobs.service import JobService, SubmissionValidationError
 from app.modules.results.comparisons import (
     ComparisonError,
@@ -27,6 +31,8 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 async def submit_mri_ingestion_job(
     study_archive: UploadFile = File(...),
     source_label: str | None = Form(default=None),
+    patient_id: str | None = Form(default=None),
+    current_user: User = Depends(get_current_user),
 ) -> JobSubmissionResponse:
     try:
         submission = await JobService().submit_mri_study(
@@ -34,6 +40,8 @@ async def submit_mri_ingestion_job(
             content_type=study_archive.content_type,
             archive_bytes=await study_archive.read(),
             source_label=source_label,
+            patient_id=patient_id,
+            current_user=current_user,
         )
     except SubmissionValidationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
@@ -57,6 +65,8 @@ async def submit_nifti_segmentation_job(
     mask_file: UploadFile | None = File(default=None),
     source_label: str | None = Form(default=None),
     acquired_at: str | None = Form(default=None),
+    patient_id: str | None = Form(default=None),
+    current_user: User = Depends(get_current_user),
 ) -> JobSubmissionResponse:
     parsed_date: date | None = None
     if acquired_at:
@@ -82,6 +92,8 @@ async def submit_nifti_segmentation_job(
             mask_bytes=mask_bytes,
             source_label=source_label,
             acquired_at=parsed_date,
+            patient_id=patient_id,
+            current_user=current_user,
         )
     except SubmissionValidationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
@@ -104,6 +116,8 @@ async def submit_demo_mri_segmentation_job(
     scan_file: UploadFile = File(...),
     source_label: str | None = Form(default=None),
     acquired_at: str | None = Form(default=None),
+    patient_id: str | None = Form(default=None),
+    current_user: User = Depends(get_current_user),
 ) -> JobSubmissionResponse:
     parsed_date: date | None = None
     if acquired_at:
@@ -122,6 +136,8 @@ async def submit_demo_mri_segmentation_job(
             content_type=scan_file.content_type,
             source_label=source_label,
             acquired_at=parsed_date,
+            patient_id=patient_id,
+            current_user=current_user,
         )
     except SubmissionValidationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
@@ -135,12 +151,34 @@ async def submit_demo_mri_segmentation_job(
     )
 
 
+
 @router.post(
     "/longitudinal-comparison",
     response_model=ComparisonResponse,
     status_code=status.HTTP_200_OK,
 )
-def submit_longitudinal_comparison(payload: LongitudinalComparisonRequest) -> ComparisonResponse:
+def submit_longitudinal_comparison(
+    payload: LongitudinalComparisonRequest,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> ComparisonResponse:
+    _, baseline_patient = find_study_for_access(
+        payload.baseline_study_id,
+        current_user,
+        session,
+        invalid_status_code=status.HTTP_400_BAD_REQUEST,
+    )
+    _, followup_patient = find_study_for_access(
+        payload.followup_study_id,
+        current_user,
+        session,
+        invalid_status_code=status.HTTP_400_BAD_REQUEST,
+    )
+    if baseline_patient.id != followup_patient.id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="baseline and follow-up studies must belong to the same patient",
+        )
     try:
         result = run_longitudinal_comparison(
             baseline_study_id=payload.baseline_study_id,
@@ -153,7 +191,20 @@ def submit_longitudinal_comparison(payload: LongitudinalComparisonRequest) -> Co
 
 
 @router.get("/{job_id}", response_model=JobStatusResponse)
-def get_job_status(job_id: str) -> JobStatusResponse:
+def get_job_status(
+    job_id: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> JobStatusResponse:
+    try:
+        parsed_job_id = UUID(job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="job not found") from exc
+    job = session.query(Job).filter(Job.public_id == parsed_job_id).one_or_none()
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    study = session.query(Study).filter(Study.id == job.study_id).one()
+    verify_study_access(study, current_user, session)
     try:
         job_status = JobService().get_job_status(job_id)
     except SubmissionValidationError as exc:
