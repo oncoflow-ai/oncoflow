@@ -10,6 +10,12 @@ describe('AIInsightsPanel', () => {
 
   it('renders AI Clinical Narrative header', () => {
     render(<AIInsightsPanel summary={mockSummaries['P-1029']} />)
-    expect(screen.getByText(/AI Clinical Narrative/i)).toBeInTheDocument()
+    expect(screen.getByText(/AI.*Clinical Narrative/i)).toBeInTheDocument()
+  })
+
+  it('renders multi-agent and RAG stream indicators', () => {
+    render(<AIInsightsPanel summary={mockSummaries['P-1029']} />)
+    expect(screen.getByText(/Image Stream/i)).toBeInTheDocument()
+    expect(screen.getByText(/Prior Summary RAG/i)).toBeInTheDocument()
   })
 })
