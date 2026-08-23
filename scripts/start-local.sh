@@ -18,9 +18,13 @@ FRONTEND_PORT=${ONCOFLOW_FRONTEND_PORT:-5173}
 RUNTIME_DIR=${ONCOFLOW_RUNTIME_DIR:-"${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}/oncoflow-$(id -u)}"}
 RUNTIME_KEY=$(printf '%s' "$REPOSITORY_ROOT" | cksum | awk '{print $1 "-" $2}')
 RUNTIME_STATE_FILE="$RUNTIME_DIR/oncoflow-launcher-$RUNTIME_KEY.state"
+LOCAL_STATE_DIR="$REPOSITORY_ROOT/var/oncoflow"
+LOCAL_DATABASE_URL=${ONCOFLOW_DATABASE_URL:-"sqlite+pysqlite:///$LOCAL_STATE_DIR/dev.sqlite3"}
 LOCAL_STORAGE_ROOT=${ONCOFLOW_STORAGE_ROOT:-"$REPOSITORY_ROOT/var/oncoflow"}
+LOCAL_SEED_DEMO_DATA=${ONCOFLOW_SEED_DEMO_DATA:-true}
 ENV_FILE=${ONCOFLOW_ENV_FILE:-"$REPOSITORY_ROOT/.env"}
 UVICORN="$VENV_PATH/bin/uvicorn"
+BACKEND_PYTHON="$VENV_PATH/bin/python"
 BACKEND_PID=
 FRONTEND_PID=
 EVENT_DIR=
@@ -276,6 +280,10 @@ if [ ! -x "$UVICORN" ]; then
   fail "Backend dependencies are not installed. Run: python3 -m venv .venv && .venv/bin/python -m pip install -e \"backend[dev,ml]\" && .venv/bin/python -m pip install -r ml/inference/requirements.txt"
 fi
 
+if [ ! -x "$BACKEND_PYTHON" ] || ! "$BACKEND_PYTHON" -c 'import nibabel, numpy' >/dev/null 2>&1; then
+  fail "NIfTI demo dependencies are not installed. Run: \"$BACKEND_PYTHON\" -m pip install -e \"$REPOSITORY_ROOT/backend[dev,ml]\""
+fi
+
 if [ ! -d "$FRONTEND_NODE_MODULES" ]; then
   fail 'Frontend dependencies are not installed. Run: (cd frontend && npm ci)'
 fi
@@ -288,6 +296,7 @@ LAUNCHER_START_TIME=$(process_start_time "$$")
 [ -n "$LAUNCHER_START_TIME" ] || fail 'Unable to determine launcher process start time.'
 
 umask 077
+mkdir -p "$LOCAL_STATE_DIR" || fail "Unable to create local state directory: $LOCAL_STATE_DIR"
 EVENT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/oncoflow-start-local.XXXXXX")
 EVENT_FIFO="$EVENT_DIR/service-exit"
 mkfifo "$EVENT_FIFO"
@@ -305,8 +314,11 @@ run_backend() {
 
   (
     cd "$REPOSITORY_ROOT/backend"
-    ONCOFLOW_STORAGE_ROOT="$LOCAL_STORAGE_ROOT" \
-    PYTHONPATH=".:..${PYTHONPATH:+:$PYTHONPATH}" exec "$UVICORN" app.main:app --reload --host 127.0.0.1 --port "$BACKEND_PORT"
+    ONCOFLOW_DATABASE_URL="$LOCAL_DATABASE_URL" \
+      ONCOFLOW_STORAGE_ROOT="$LOCAL_STORAGE_ROOT" \
+      ONCOFLOW_SEED_DEMO_DATA="$LOCAL_SEED_DEMO_DATA" \
+      PYTHONPATH=".:..${PYTHONPATH:+:$PYTHONPATH}" \
+      exec "$UVICORN" app.main:app --reload --host 127.0.0.1 --port "$BACKEND_PORT"
   ) &
   child_pid=$!
 
