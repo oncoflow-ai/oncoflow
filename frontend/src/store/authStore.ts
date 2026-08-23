@@ -57,11 +57,6 @@ interface AuthState {
   logout: () => void
 }
 
-function sanitizeUser(user: AppUser): AuthenticatedUser {
-  const { password: _password, ...authenticatedUser } = user
-  return authenticatedUser
-}
-
 function initialsFromName(name: string): string {
   return name
     .split(/\s+/)
@@ -78,12 +73,17 @@ function mergeUsers(users: AppUser[] = []): AppUser[] {
   return Array.from(byEmail.values())
 }
 
-function findUser(users: AppUser[], idOrEmail: string, role?: UserRole): AppUser | undefined {
-  const normalized = idOrEmail.trim().toLowerCase()
-  return users.find(user => {
-    const matchesLogin = user.email.toLowerCase() === normalized || user.id.toLowerCase() === normalized
-    return matchesLogin && (!role || user.role === role)
-  })
+const userRoles: UserRole[] = ['admin', 'doctor', 'radiologist', 'clinician', 'patient']
+
+function isBackendUser(user: unknown): user is Omit<AuthenticatedUser, 'initials'> & { email: string } {
+  if (typeof user !== 'object' || user === null) return false
+
+  const candidate = user as Record<string, unknown>
+  return typeof candidate.id === 'string'
+    && typeof candidate.name === 'string'
+    && typeof candidate.email === 'string'
+    && typeof candidate.role === 'string'
+    && userRoles.includes(candidate.role as UserRole)
 }
 
 function makeUserId(role: UserRole, patientRecordId?: string): string {
@@ -106,47 +106,37 @@ export const useAuthStore = create<AuthState>()(
       users: demoUsers,
       patientAssignments: {},
 
-      login: async (idOrEmail: string, password: string, role?: UserRole) => {
+      login: async (idOrEmail: string, password: string, _role?: UserRole) => {
         if (!idOrEmail.trim() || !password.trim()) {
           throw new Error('User ID/email and password are required')
         }
-        
-        try {
-          const formData = new URLSearchParams()
-          formData.append('username', idOrEmail)
-          formData.append('password', password)
-          
-          const response = await apiClient.post('/api/v1/auth/login', formData, {
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded'
-            }
-          })
-          
-          const { access_token, user } = response.data
-          
-          sessionStorage.setItem('oncoflow_token', access_token)
-          
-          const authenticatedUser = {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-            initials: initialsFromName(user.name)
+
+        const formData = new URLSearchParams()
+        formData.append('username', idOrEmail)
+        formData.append('password', password)
+
+        const response = await apiClient.post('/api/v1/auth/login', formData, {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
           }
-          
-          set({ user: authenticatedUser as AuthenticatedUser })
-          return authenticatedUser as AuthenticatedUser
-        } catch (error) {
-          // Fallback to local demo users if backend is offline or for demo credentials
-          const users = mergeUsers(useAuthStore.getState().users)
-          const localUser = findUser(users, idOrEmail, role)
-          if (localUser && localUser.password === password) {
-            const sanitized = sanitizeUser(localUser)
-            set({ user: sanitized })
-            return sanitized
-          }
-          throw new Error('Invalid user credentials')
+        })
+
+        const { access_token, user } = response.data
+        if (typeof access_token !== 'string' || !access_token || !isBackendUser(user)) {
+          throw new Error('Backend sign-in response is invalid')
         }
+
+        const authenticatedUser: AuthenticatedUser = {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          initials: initialsFromName(user.name)
+        }
+
+        sessionStorage.setItem('oncoflow_token', access_token)
+        set({ user: authenticatedUser })
+        return authenticatedUser
       },
 
 
