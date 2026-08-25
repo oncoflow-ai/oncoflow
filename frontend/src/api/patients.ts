@@ -18,17 +18,37 @@ function writeExtras(patients: Patient[]) {
   sessionStorage.setItem(EXTRA_KEY, JSON.stringify(patients))
 }
 
+import { readExtraScans } from './scans'
+import { mockScans } from '@/data/mockData'
+
+function computePatientWithScans(p: Patient): Patient {
+  const extraScans = readExtraScans()
+  const baseScans = mockScans[p.id] ?? []
+  const extras = extraScans[p.id] ?? []
+  const allScans = [...baseScans, ...extras]
+  if (allScans.length > 0) {
+    allScans.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    const latest = allScans[allScans.length - 1]
+    return {
+      ...p,
+      scanCount: allScans.length,
+      lastScanDate: latest.date,
+    }
+  }
+  return p
+}
+
 function mergedPatients(): Patient[] {
   const seen = new Set<string>()
   const out: Patient[] = []
   for (const p of mockPatients) {
     seen.add(p.id)
-    out.push(p)
+    out.push(computePatientWithScans(p))
   }
   for (const p of readExtras()) {
     if (!seen.has(p.id)) {
       seen.add(p.id)
-      out.push(p)
+      out.push(computePatientWithScans(p))
     }
   }
   return out

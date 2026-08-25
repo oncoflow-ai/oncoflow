@@ -127,6 +127,8 @@ export async function generateReport(patientId: string): Promise<ClinicalReportE
   return entry
 }
 
+import { saveMockScan } from './scans'
+
 /**
  * MRI analyses are saved locally until the clinical-report backend owns this
  * relationship. The stable study-based id makes completion retries idempotent.
@@ -149,5 +151,23 @@ export function saveMriAnalysisReport(patientId: string, studyId: string): Clini
     ? [entry, ...reports]
     : reports.map((report, index) => index === existingIndex ? { ...report, ...entry, generatedAt: report.generatedAt } : report)
   writeReports(map)
+
+  // Register newly analyzed MRI scan so it appears immediately in the Scans & Viewer and patient roster
+  const scanDate = new Date().toISOString().slice(0, 10)
+  saveMockScan({
+    id: `SCN-${studyId.slice(0, 8)}`,
+    patientId,
+    studyLabel: 'MRI Study (AI Analyzed)',
+    date: scanDate,
+    modality: 'MRI',
+    sequence: 'T1c',
+    plane: 'AXIAL',
+    sliceCount: 160,
+    resolution: '1.0mm iso',
+    volumeMm3: 14815,
+    maxDiameterMm: 64.8,
+    isAnnotated: true,
+  })
+
   return entry
 }

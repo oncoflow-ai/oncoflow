@@ -291,6 +291,10 @@ export default function DoctorPatientDashboardPage() {
             onJobReachedTerminal={payload => {
               queryClient.invalidateQueries({ queryKey: ['backend-studies'] })
               queryClient.invalidateQueries({ queryKey: ['scans', id] })
+              queryClient.invalidateQueries({ queryKey: ['all-scans'] })
+              queryClient.invalidateQueries({ queryKey: ['patients'] })
+              queryClient.invalidateQueries({ queryKey: ['patient', id] })
+              queryClient.invalidateQueries({ queryKey: ['summary', id] })
               if (payload.status === 'completed' && id) {
                 saveMriAnalysisReport(id, payload.studyId)
                 queryClient.invalidateQueries({ queryKey: ['reports', id] })
