@@ -103,6 +103,7 @@ export interface BackendOperatorWorkspaceProps {
   headingDescription?: string
   /** When provided (e.g. patient context), replaces the source label field until edited elsewhere */
   prefilledSourceLabel?: string
+  patientId?: string
   onJobReachedTerminal?: (payload: {
     studyId: string
     status: 'completed' | 'failed'
@@ -115,6 +116,7 @@ export default function BackendOperatorWorkspace({
   headingTitle = 'Upload MRI for analysis',
   headingDescription = 'Upload an MRI study for segmentation. When processing is complete, the clinical result opens automatically and is saved to the patient report history.',
   prefilledSourceLabel,
+  patientId,
   onJobReachedTerminal,
 }: BackendOperatorWorkspaceProps = {}) {
   const inputId = useId()
@@ -184,15 +186,18 @@ export default function BackendOperatorWorkspace({
       scanFile,
       sourceLabel,
       acquiredAt,
+      patientId: targetPatientId,
     }: {
       scanFile: File
       sourceLabel?: string
       acquiredAt?: string
+      patientId?: string
     }) =>
       submitDemoMriSegmentationJob({
         scanFile,
         sourceLabel,
         acquiredAt,
+        patientId: targetPatientId,
       }),
     onMutate: () => {
       setLocalError(null)
@@ -267,6 +272,7 @@ export default function BackendOperatorWorkspace({
         scanFile: selectedFile,
         maskFile,
         sourceLabel,
+        patientId,
         acquiredAt,
       })
       return
@@ -281,6 +287,7 @@ export default function BackendOperatorWorkspace({
         scanFile: selectedFile,
         sourceLabel,
         acquiredAt,
+        patientId,
       })
       return
     }

@@ -666,10 +666,30 @@ def test_demo_mri_segmentation_completes_and_exposes_report(
         "simulated"
     )
     assert body["metadata"]["source"] == "ground-truth-demo-mask"
-    assert body["metadata"]["report"]["title"] == (
-        "AI brain MRI segmentation report"
-    )
-    assert "previous scan" in body["metadata"]["report"]["comparison"]
-    assert body["metadata"]["report"]["quantitative"]["volume_change_pct"] > 0
+    assert body["metadata"]["demo_stage"] == "baseline"
+    assert body["metadata"]["stage_index"] == 0
+    assert "Baseline" in body["metadata"]["report"]["title"]
+    assert "Baseline" in body["metadata"]["report"]["comparison"]
+    assert body["metadata"]["report"]["quantitative"]["prior_volume_cm3"] is None
     assert len(body["metadata"]["report"]["recommendations"]) == 3
     assert "disclaimer" not in body["metadata"]["report"]
+
+    # Submit second consecutive demo MRI upload — should progress to follow-up stage 1 with shrinking tumor
+    submit_response_2 = client.post(
+        "/api/v1/jobs/demo-mri-segmentation",
+        files={"scan_file": ("class-demo-fu1.nii.gz", b"mri-bytes-fu1", "application/gzip")},
+        data={"source_label": "Class demo MRI FU1", "acquired_at": "2024-06-15"},
+    )
+    assert submit_response_2.status_code == 201
+    submitted_2 = submit_response_2.json()
+
+    result_response_2 = client.get(f"/api/v1/results/{submitted_2['studyId']}")
+    assert result_response_2.status_code == 200
+    body_2 = result_response_2.json()
+    assert body_2["metadata"]["demo_stage"] == "fu1"
+    assert body_2["metadata"]["stage_index"] == 1
+    # Tumor volume in follow-up 1 is markedly smaller (shrinking from ~14815 to ~3101)
+    assert body_2["lesions"][0]["measurements"]["volumeMm3"] < body["lesions"][0]["measurements"]["volumeMm3"]
+    assert body_2["metadata"]["report"]["quantitative"]["volume_change_pct"] < 0
+    assert "regression" in body_2["metadata"]["report"]["finding"].lower()
+

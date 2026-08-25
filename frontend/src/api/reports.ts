@@ -129,24 +129,59 @@ export async function generateReport(patientId: string): Promise<ClinicalReportE
 
 import { saveMockScan } from './scans'
 
+export interface MriAnalysisReportOptions {
+  volumeMm3?: number
+  maxDiameterMm?: number
+  stageIndex?: number
+  stageLabel?: string
+  title?: string
+  summarySnippet?: string
+}
+
 /**
  * MRI analyses are saved locally until the clinical-report backend owns this
  * relationship. The stable study-based id makes completion retries idempotent.
  */
-export function saveMriAnalysisReport(patientId: string, studyId: string): ClinicalReportEntry {
+export function saveMriAnalysisReport(
+  patientId: string,
+  studyId: string,
+  options?: MriAnalysisReportOptions
+): ClinicalReportEntry {
+  const map = readReports()
+  const reports = map[patientId] ?? []
+  const existingMriReports = reports.filter(r => r.kind === 'mri-analysis')
+  const existingIndex = reports.findIndex(report => report.studyId === studyId)
+
+  // If already saved, reuse existing stage or options, otherwise count previous MRI analyses
+  const defaultStageIndex = existingIndex === -1 ? existingMriReports.length : Math.max(0, existingMriReports.length - 1)
+  const stageIndex = options?.stageIndex ?? defaultStageIndex
+  const isFollowUp = stageIndex > 0
+  const defaultLabel = options?.studyLabel ?? (
+    isFollowUp
+      ? `MRI Study (Follow-up #${stageIndex})`
+      : 'MRI Study #1 (Baseline)'
+  )
+  const defaultVolume = options?.volumeMm3 ?? (
+    stageIndex === 1 ? 3101 : stageIndex === 2 ? 3911 : stageIndex === 3 ? 2285 : stageIndex === 4 ? 1264 : 14815
+  )
+  const defaultDiameter = options?.maxDiameterMm ?? (
+    stageIndex === 1 ? 21.2 : stageIndex === 2 ? 23.5 : stageIndex === 3 ? 19.1 : stageIndex === 4 ? 14.8 : 64.8
+  )
+
   const entry: ClinicalReportEntry = {
     id: `MRI-${studyId}`,
     patientId,
     studyId,
     kind: 'mri-analysis',
-    title: 'MRI segmentation analysis',
+    title: options?.title ?? (isFollowUp ? `MRI segmentation analysis (Follow-up #${stageIndex})` : 'MRI segmentation analysis'),
     generatedAt: new Date().toISOString(),
-    summarySnippet: 'MRI segmentation is complete and ready for clinical review.',
+    summarySnippet: options?.summarySnippet ?? (
+      isFollowUp
+        ? `Longitudinal MRI analysis complete: tumor volume decreased to ${(defaultVolume / 1000).toFixed(2)} cm³ with evidence of interval regression.`
+        : 'MRI segmentation is complete and ready for clinical review.'
+    ),
   }
 
-  const map = readReports()
-  const reports = map[patientId] ?? []
-  const existingIndex = reports.findIndex(report => report.studyId === studyId)
   map[patientId] = existingIndex === -1
     ? [entry, ...reports]
     : reports.map((report, index) => index === existingIndex ? { ...report, ...entry, generatedAt: report.generatedAt } : report)
@@ -157,17 +192,19 @@ export function saveMriAnalysisReport(patientId: string, studyId: string): Clini
   saveMockScan({
     id: `SCN-${studyId.slice(0, 8)}`,
     patientId,
-    studyLabel: 'MRI Study (AI Analyzed)',
+    studyLabel: options?.stageLabel ?? defaultLabel,
     date: scanDate,
     modality: 'MRI',
     sequence: 'T1c',
     plane: 'AXIAL',
     sliceCount: 160,
     resolution: '1.0mm iso',
-    volumeMm3: 14815,
-    maxDiameterMm: 64.8,
+    volumeMm3: defaultVolume,
+    maxDiameterMm: defaultDiameter,
     isAnnotated: true,
+    demoStageIndex: stageIndex,
   })
 
   return entry
 }
+

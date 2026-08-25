@@ -190,13 +190,14 @@ def bootstrap_users() -> None:
                     session.add(patient)
                     session.flush()
 
-                if doctor and patient:
-                    assign = session.query(Assignment).filter(
-                        Assignment.doctor_id == doctor.id,
-                        Assignment.patient_id == patient.id,
-                    ).first()
-                    if not assign:
-                        session.add(Assignment(doctor_id=doctor.id, patient_id=patient.id))
+                for user in created_users.values():
+                    if user and user.role in {"doctor", "clinician", "radiologist", "researcher"} and patient:
+                        assign = session.query(Assignment).filter(
+                            Assignment.doctor_id == user.id,
+                            Assignment.patient_id == patient.id,
+                        ).first()
+                        if not assign:
+                            session.add(Assignment(doctor_id=user.id, patient_id=patient.id))
 
             session.commit()
     except Exception as exc:

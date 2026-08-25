@@ -191,7 +191,7 @@ describe('DoctorPatientDashboardPage MRI upload pipeline', () => {
     await user.click(screen.getByRole('button', { name: 'Upload And Start' }))
 
     await waitFor(() => expect(submitDemoMriSegmentationJobMock).toHaveBeenCalledWith({
-      scanFile: file, sourceLabel: 'Class demo MRI', acquiredAt: '',
+      scanFile: file, sourceLabel: 'Class demo MRI', acquiredAt: '', patientId: 'P-1001',
     }))
   })
 
