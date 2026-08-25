@@ -9,14 +9,13 @@ import MriWorkspace from '@/components/shared/MriWorkspace'
 import ErrorBanner from '@/components/shared/ErrorBanner'
 import EmptyState from '@/components/shared/EmptyState'
 import BackendOperatorWorkspace from '@/components/dashboard/BackendOperatorWorkspace'
-import LongitudinalComparisonPanel from '@/components/dashboard/LongitudinalComparisonPanel'
 import { getPatient } from '@/api/patients'
 import { getScans } from '@/api/scans'
 import { generateReport, getSummary, listReports, saveMriAnalysisReport } from '@/api/reports'
 import { formatDate, formatVolume, calcVolumeDeltaPct, cn } from '@/lib/utils'
 import { ScanLine } from 'lucide-react'
 
-type Tab = 'scans' | 'longitudinal' | 'upload' | 'reports'
+type Tab = 'scans' | 'upload' | 'reports'
 
 function PatientTabButton({
   active,
@@ -49,14 +48,14 @@ export default function DoctorPatientDashboardPage() {
 
   const tabParam = searchParams.get('tab') as Tab | null
   const [tab, setTabState] = useState<Tab>(() => {
-    if (tabParam && ['scans', 'longitudinal', 'upload', 'reports'].includes(tabParam)) {
+    if (tabParam && ['scans', 'upload', 'reports'].includes(tabParam)) {
       return tabParam
     }
     return 'scans'
   })
 
   useEffect(() => {
-    if (tabParam && ['scans', 'longitudinal', 'upload', 'reports'].includes(tabParam)) {
+    if (tabParam && ['scans', 'upload', 'reports'].includes(tabParam)) {
       setTabState(tabParam)
     }
   }, [tabParam])
@@ -183,7 +182,6 @@ export default function DoctorPatientDashboardPage() {
 
       <div className="border-b border-border px-5 flex gap-1 bg-surface/40">
         <PatientTabButton active={tab === 'scans'} label="Scans & viewer" onClick={() => setTab('scans')} />
-        <PatientTabButton active={tab === 'longitudinal'} label="Longitudinal" onClick={() => setTab('longitudinal')} />
         <PatientTabButton active={tab === 'upload'} label="Upload MRI — pipeline" onClick={() => setTab('upload')} />
         <PatientTabButton active={tab === 'reports'} label="Reports" onClick={() => setTab('reports')} />
       </div>
@@ -269,18 +267,6 @@ export default function DoctorPatientDashboardPage() {
         </div>
       )}
 
-      {tab === 'longitudinal' && (
-        <div className="flex-1 overflow-y-auto p-5">
-          <LongitudinalComparisonPanel
-            restrictToStudyIds={patient?.linkedStudyIds}
-            scopeNote={
-              patient?.linkedStudyIds?.length
-                ? undefined
-                : 'Showing all demo-backend studies. Configure linkedStudyIds on the mock patient to narrow comparisons.'
-            }
-          />
-        </div>
-      )}
       {tab === 'upload' && (
         <div className="flex-1 overflow-y-auto p-5">
           <BackendOperatorWorkspace
