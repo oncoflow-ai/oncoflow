@@ -57,14 +57,24 @@ describe('MRI analysis reports', () => {
     expect(scans.some(s => s.id === 'SCN-study-12')).toBe(true)
   })
 
-  it('provides demo BraTS scans and summary for Demo Patient P01 (P-9001)', async () => {
+  it('starts Demo Patient P01 (P-9001) clean with 0 scans until upload', async () => {
     const demoPatient = await getPatient('P-9001')
     expect(demoPatient.name).toBe('Demo Patient P01')
-    expect(demoPatient.scanCount).toBe(2)
+    expect(demoPatient.scanCount).toBe(0)
 
     const scans = await getScans('P-9001')
-    expect(scans).toHaveLength(2)
-    expect(scans[0].studyLabel).toContain('Baseline')
-    expect(scans[1].studyLabel).toContain('Follow-up')
+    expect(scans).toHaveLength(0)
+
+    // After baseline upload
+    await saveMriAnalysisReport('P-9001', 'study-demo-1', {
+      stageIndex: 0,
+      studyLabel: 'MRI Study #1 (Baseline)',
+      volumeMm3: 14815,
+      maxDiameterMm: 39.1,
+    })
+
+    const updatedScans = await getScans('P-9001')
+    expect(updatedScans).toHaveLength(1)
+    expect(updatedScans[0].studyLabel).toContain('Baseline')
   })
 })

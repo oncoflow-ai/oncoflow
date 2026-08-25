@@ -9,7 +9,7 @@ from uuid import UUID
 
 from app.api.schemas.jobs import JobErrorPayload
 from app.core.audit import log_audit_event
-from app.infra.db.models import Artifact, Job, JobEvent, Study
+from app.infra.db.models import Artifact, Job, JobEvent, Patient, Study
 from app.infra.db.session import create_session_factory
 from app.core.config import get_settings
 from app.modules.artifacts.storage import resolve_artifact_location
@@ -449,8 +449,239 @@ def execute_nifti_segmentation_job(*, job_id: str) -> WorkerDispatchEnvelope:
         )
 
 
-def _default_demo_mask_path(settings) -> Path:
-    if settings.demo_ground_truth_mask_path:
+DEMO_STAGE_CONFIGS: list[dict[str, Any]] = [
+    {
+        "stage_index": 0,
+        "stage_key": "baseline",
+        "stage_label": "Baseline Scan",
+        "mask_file": "P01_tumor_mask_baseline.nii.gz",
+        "report": {
+            "title": "AI brain MRI segmentation report (Baseline Study)",
+            "technique": (
+                "Automated volumetric tumor segmentation was performed on initial "
+                "baseline axial post-contrast T1-weighted brain MRI establishing "
+                "pre-treatment tumor burden."
+            ),
+            "finding": (
+                "A solitary enhancing intra-axial mass is segmented in the right "
+                "cerebral hemisphere, centered near the deep fronto-parietal white matter. "
+                "The lesion demonstrates an enhancing component (14.82 cm3 volume, longest "
+                "diameter 39.1 mm) with surrounding T2/FLAIR hyperintense vasogenic edema. "
+                "No second discrete enhancing lesion is identified."
+            ),
+            "subregions": [
+                "enhancing tumor core",
+                "peritumoral vasogenic edema",
+                "non-enhancing core component",
+            ],
+            "quantitative": {
+                "current_volume_cm3": 14.815,
+                "prior_volume_cm3": None,
+                "volume_change_pct": None,
+                "longest_diameter_mm": 39.1,
+                "prior_longest_diameter_mm": None,
+                "diameter_change_mm": None,
+                "confidence": "high",
+            },
+            "comparison": (
+                "Baseline examination. No prior reference MRI study available for "
+                "comparison. Establishes baseline quantitative volumetric metrics "
+                "for longitudinal response tracking."
+            ),
+            "impression": (
+                "Solitary right cerebral enhancing lesion establishing initial "
+                "baseline tumor burden (14.82 cm3 volume). Findings serve as the "
+                "quantitative benchmark for subsequent longitudinal interval response assessment."
+            ),
+            "recommendations": [
+                "Radiologist should verify baseline segmentation boundaries on orthogonal planes.",
+                "Initiate treatment protocol and schedule serial follow-up MRI to assess interval therapeutic response.",
+                "Correlate baseline volumetric burden with neurological baseline examination.",
+            ],
+        },
+    },
+    {
+        "stage_index": 1,
+        "stage_key": "fu1",
+        "stage_label": "Follow-Up Study #1 (Marked Tumor Shrinkage)",
+        "mask_file": "P01_tumor_mask_fu1.nii.gz",
+        "report": {
+            "title": "AI brain MRI segmentation report (Follow-Up #1)",
+            "technique": (
+                "Automated volumetric tumor segmentation was performed on axial "
+                "post-contrast T1-weighted brain MRI with longitudinal interval "
+                "comparison against baseline scan."
+            ),
+            "finding": (
+                "Marked interval regression of the previously segmented right parietal "
+                "enhancing intra-axial mass. Substantial reduction in both enhancing "
+                "solid core and surrounding peritumoral edema."
+            ),
+            "subregions": [
+                "residual enhancing tumor",
+                "reduced peritumoral edema",
+                "treated core",
+            ],
+            "quantitative": {
+                "current_volume_cm3": 3.101,
+                "prior_volume_cm3": 14.815,
+                "volume_change_pct": -79.1,
+                "longest_diameter_mm": 21.2,
+                "prior_longest_diameter_mm": 39.1,
+                "diameter_change_mm": -17.9,
+                "confidence": "high",
+            },
+            "comparison": (
+                "Compared with baseline (14.82 cm3), total tumor volume decreased "
+                "significantly to 3.10 cm3 (-79.1% volume reduction). Longest axial "
+                "diameter decreased from 39.1 mm to 21.2 mm (-17.9 mm decrease). "
+                "Significant reduction in surrounding edema."
+            ),
+            "impression": (
+                "Marked interval therapeutic response and tumor shrinkage following "
+                "treatment initiation (-79.1% volume reduction). Findings consistent "
+                "with major radiological response."
+            ),
+            "recommendations": [
+                "Confirm segmentation boundaries against baseline landmarks.",
+                "Continue current treatment protocol given positive therapeutic response.",
+                "Schedule next surveillance MRI study in 8-12 weeks.",
+            ],
+        },
+    },
+    {
+        "stage_index": 2,
+        "stage_key": "fu2",
+        "stage_label": "Follow-Up Study #2 (Stable Post-Treatment Bed)",
+        "mask_file": "P01_tumor_mask_fu2.nii.gz",
+        "report": {
+            "title": "AI brain MRI segmentation report (Follow-Up #2)",
+            "technique": (
+                "Automated volumetric tumor segmentation and interval tracking "
+                "relative to prior serial MRI studies."
+            ),
+            "finding": (
+                "Stable appearance of the treated right parietal cavity with "
+                "thin peripheral rim enhancement. Residual edema remains minimal."
+            ),
+            "subregions": [
+                "thin peripheral rim",
+                "minimal edema",
+                "post-treatment cavity",
+            ],
+            "quantitative": {
+                "current_volume_cm3": 3.911,
+                "prior_volume_cm3": 3.101,
+                "volume_change_pct": -73.6,
+                "longest_diameter_mm": 23.5,
+                "prior_longest_diameter_mm": 21.2,
+                "diameter_change_mm": 2.3,
+                "confidence": "high",
+            },
+            "comparison": (
+                "Compared with baseline, tumor burden remains substantially reduced "
+                "(-73.6% volume reduction vs baseline). Minor interval margin remodeling "
+                "noted relative to Follow-Up #1 (3.10 -> 3.91 cm3), consistent with stable "
+                "post-treatment cavity dynamics."
+            ),
+            "impression": (
+                "Stable post-treatment appearances without evidence of true nodular "
+                "recurrence. Substantial overall response preserved relative to baseline."
+            ),
+            "recommendations": [
+                "Review subtraction series to distinguish post-radiation enhancement from progression.",
+                "Maintain planned imaging surveillance schedule.",
+            ],
+        },
+    },
+    {
+        "stage_index": 3,
+        "stage_key": "fu3",
+        "stage_label": "Follow-Up Study #3 (Continued Regression)",
+        "mask_file": "P01_tumor_mask_fu3.nii.gz",
+        "report": {
+            "title": "AI brain MRI segmentation report (Follow-Up #3)",
+            "technique": (
+                "Automated volumetric tumor segmentation with multi-study longitudinal comparison."
+            ),
+            "finding": (
+                "Continued interval reduction in residual enhancing tumor tissue in the right "
+                "parietal region. Surrounding parenchymal edema is nearly completely resolved."
+            ),
+            "subregions": [
+                "focal residual enhancement",
+                "resolved edema",
+            ],
+            "quantitative": {
+                "current_volume_cm3": 2.285,
+                "prior_volume_cm3": 3.911,
+                "volume_change_pct": -84.6,
+                "longest_diameter_mm": 19.1,
+                "prior_longest_diameter_mm": 23.5,
+                "diameter_change_mm": -4.4,
+                "confidence": "high",
+            },
+            "comparison": (
+                "Compared with prior study (3.91 cm3), total volume decreased to 2.29 cm3 "
+                "(-41.6% interval decrease; -84.6% reduction from baseline). Longest diameter "
+                "decreased to 19.1 mm."
+            ),
+            "impression": (
+                "Excellent ongoing therapeutic response with progressive interval shrinkage "
+                "of residual enhancing tissue."
+            ),
+            "recommendations": [
+                "Continue maintenance therapy as clinically indicated.",
+                "Routine interval follow-up MRI.",
+            ],
+        },
+    },
+    {
+        "stage_index": 4,
+        "stage_key": "fu4",
+        "stage_label": "Follow-Up Study #4 (Minimal Residual Focus)",
+        "mask_file": "P01_tumor_mask_fu4.nii.gz",
+        "report": {
+            "title": "AI brain MRI segmentation report (Follow-Up #4)",
+            "technique": (
+                "Automated volumetric tumor segmentation assessing residual post-treatment tissue."
+            ),
+            "finding": (
+                "Only a minute focal area of faint residual enhancement is detected in the right "
+                "parietal cavity. No surrounding edema, midline shift, or mass effect."
+            ),
+            "subregions": [
+                "minimal focal enhancement",
+            ],
+            "quantitative": {
+                "current_volume_cm3": 1.264,
+                "prior_volume_cm3": 2.285,
+                "volume_change_pct": -91.5,
+                "longest_diameter_mm": 14.8,
+                "prior_longest_diameter_mm": 19.1,
+                "diameter_change_mm": -4.3,
+                "confidence": "high",
+            },
+            "comparison": (
+                "Compared with baseline (14.82 cm3), overall tumor volume has decreased "
+                "by -91.5% to 1.26 cm3. Longest diameter reduced from 39.1 mm to 14.8 mm. "
+                "Sustained durable regression."
+            ),
+            "impression": (
+                "Minimal residual enhancing disease with sustained durable response to therapy "
+                "(-91.5% from baseline). No evidence of aggressive relapse."
+            ),
+            "recommendations": [
+                "Reassuring imaging appearance. Continue surveillance intervals.",
+            ],
+        },
+    },
+]
+
+
+def _demo_mask_path_for_stage(stage_index: int, settings) -> Path:
+    cfg = DEMO_STAGE_CONFIGS[stage_index % len(DEMO_STAGE_CONFIGS)]
+    if stage_index == 0 and settings.demo_ground_truth_mask_path:
         return Path(settings.demo_ground_truth_mask_path).expanduser().resolve()
     repo_root = Path(__file__).resolve().parents[4]
     return (
@@ -458,71 +689,30 @@ def _default_demo_mask_path(settings) -> Path:
         / "data"
         / "P01"
         / "tumor segmentation"
-        / "P01_tumor_mask_baseline.nii.gz"
+        / cfg["mask_file"]
     )
 
 
-def _demo_result_metadata() -> dict[str, object]:
+def _default_demo_mask_path(settings) -> Path:
+    return _demo_mask_path_for_stage(0, settings)
+
+
+def _demo_result_metadata(stage_index: int = 0) -> dict[str, object]:
+    cfg = DEMO_STAGE_CONFIGS[stage_index % len(DEMO_STAGE_CONFIGS)]
     return {
         "case_qc_reasons": [],
         "lesion_count": 1,
         "source": "ground-truth-demo-mask",
         "demo": True,
-        "report": {
-            "title": "AI brain MRI segmentation report",
-            "technique": (
-                "Automated volumetric tumor segmentation was performed on axial "
-                "post-contrast T1-weighted brain MRI. The generated mask was "
-                "reviewed for lesion extent, volume, longest diameter, and "
-                "interval change relative to the prior reference examination."
-            ),
-            "finding": (
-                "A solitary enhancing intra-axial mass is segmented in the right "
-                "cerebral hemisphere, centered near the deep parietal/periatrial "
-                "white matter. The lesion demonstrates a measurable enhancing "
-                "component with surrounding T2/FLAIR hyperintense edema. No second "
-                "discrete enhancing lesion is identified in this analysis."
-            ),
-            "subregions": [
-                "enhancing tumor",
-                "peritumoral edema",
-                "necrotic or non-enhancing tumor core",
-            ],
-            "quantitative": {
-                "current_volume_cm3": 14.815,
-                "prior_volume_cm3": 12.92,
-                "volume_change_pct": 14.7,
-                "longest_diameter_mm": 39.1,
-                "prior_longest_diameter_mm": 35.8,
-                "diameter_change_mm": 3.3,
-                "confidence": "high",
-            },
-            "comparison": (
-                "Compared with the previous scan, total segmented tumor volume has "
-                "increased from 12.92 cm3 to 14.82 cm3, an estimated 14.7% interval "
-                "increase. Longest axial diameter increased from 35.8 mm to 39.1 mm. "
-                "The enhancing tumor component is slightly larger, with mild "
-                "increase in adjacent edema. No new separate lesion is seen."
-            ),
-            "impression": (
-                "Mild interval progression of a solitary enhancing brain tumor, "
-                "driven by increased enhancing tumor volume and slight enlargement "
-                "of surrounding edema. Quantitative findings do not suggest a major "
-                "mass-effect emergency on this generated review, but the interval "
-                "growth pattern warrants radiologist confirmation and clinical "
-                "correlation with treatment history."
-            ),
-            "recommendations": [
-                "Radiologist should verify segmentation boundaries on axial, coronal, and sagittal planes.",
-                "Correlate with steroid use, recent radiation, and treatment timing to distinguish progression from treatment effect.",
-                "Consider multidisciplinary tumor board review if interval growth is confirmed.",
-            ],
-        },
+        "demo_stage": cfg["stage_key"],
+        "stage_index": cfg["stage_index"],
+        "stage_label": cfg["stage_label"],
+        "report": cfg["report"],
     }
 
 
 def execute_demo_mri_segmentation_job(*, job_id: str) -> WorkerDispatchEnvelope:
-    """Simulate model inference using the bundled P01 ground-truth tumor mask."""
+    """Simulate model inference using bundled multi-stage ground-truth tumor masks."""
 
     session_factory = create_session_factory()
     settings = get_settings()
@@ -539,6 +729,26 @@ def execute_demo_mri_segmentation_job(*, job_id: str) -> WorkerDispatchEnvelope:
     with session_factory() as session:
         job = session.query(Job).filter(Job.public_id == UUID(job_id)).one()
         study = session.query(Study).filter(Study.id == job.study_id).one()
+
+        # Count prior demo uploads:
+        # If the patient has a fixed designated pseudonym (like P-9001), count prior uploads for that patient.
+        # If the upload is anonymous/auto-generated patient without explicit patient_id, count global prior uploads.
+        patient = session.query(Patient).filter(Patient.id == study.patient_id).first() if study.patient_id else None
+        is_auto_generated_patient = patient is not None and patient.pseudonym.startswith("PAT-")
+
+        if study.patient_id is not None and not is_auto_generated_patient:
+            patient_prior_count = session.query(Study).filter(
+                Study.source_kind == "demo-mri-upload",
+                Study.patient_id == study.patient_id,
+                Study.id < study.id,
+            ).count()
+            demo_stage_index = patient_prior_count % len(DEMO_STAGE_CONFIGS)
+        else:
+            global_prior_count = session.query(Study).filter(
+                Study.source_kind == "demo-mri-upload",
+                Study.id < study.id,
+            ).count()
+            demo_stage_index = global_prior_count % len(DEMO_STAGE_CONFIGS)
 
         current_stage = "data-fetching"
         running_state = transition_job(
@@ -563,6 +773,7 @@ def execute_demo_mri_segmentation_job(*, job_id: str) -> WorkerDispatchEnvelope:
                     "progress": 15,
                     "stage_message": job.stage_message,
                     "delaySeconds": settings.demo_job_delay_seconds,
+                    "stageIndex": demo_stage_index,
                 },
             )
         )
@@ -617,7 +828,7 @@ def execute_demo_mri_segmentation_job(*, job_id: str) -> WorkerDispatchEnvelope:
             if step_delay > 0:
                 time.sleep(step_delay)
 
-            mask_path = _default_demo_mask_path(settings)
+            mask_path = _demo_mask_path_for_stage(demo_stage_index, settings)
             if not mask_path.exists():
                 raise RuntimeError(f"Demo ground-truth mask not found: {mask_path}")
 
@@ -626,6 +837,7 @@ def execute_demo_mri_segmentation_job(*, job_id: str) -> WorkerDispatchEnvelope:
                 "Materializing demo MRI segmentation result",
                 study_id=str(study.public_id),
                 mask_path=str(mask_path),
+                stage_index=demo_stage_index,
             )
             materialize_nifti_study_with_mask(
                 session=session,
@@ -633,11 +845,11 @@ def execute_demo_mri_segmentation_job(*, job_id: str) -> WorkerDispatchEnvelope:
                 mask_source_absolute_path=mask_path,
                 runner_metadata={
                     "model_id": "oncoflow-demo-ensemble",
-                    "runner_version": "class-demo-1",
+                    "runner_version": f"class-demo-{demo_stage_index + 1}",
                     "execution_backend": "simulated",
                     "warnings": [],
                 },
-                result_metadata=_demo_result_metadata(),
+                result_metadata=_demo_result_metadata(demo_stage_index),
             )
             completed_state = transition_job(
                 job.status,

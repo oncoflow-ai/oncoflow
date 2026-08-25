@@ -43,6 +43,7 @@ export interface Scan {
   volumeMm3: number
   maxDiameterMm: number
   isAnnotated: boolean
+  demoStageIndex?: number
 }
 
 export interface RAGSourceRef {

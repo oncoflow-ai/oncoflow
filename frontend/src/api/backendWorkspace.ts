@@ -136,6 +136,7 @@ export interface SubmitDemoMriSegmentationJobInput {
   scanFile: File
   sourceLabel?: string
   acquiredAt?: string
+  patientId?: string
 }
 
 export async function submitDemoMriSegmentationJob(
@@ -148,6 +149,9 @@ export async function submitDemoMriSegmentationJob(
   }
   if (input.acquiredAt?.trim()) {
     formData.append('acquired_at', input.acquiredAt.trim())
+  }
+  if (input.patientId?.trim()) {
+    formData.append('patient_id', input.patientId.trim())
   }
 
   try {

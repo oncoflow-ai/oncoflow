@@ -50,16 +50,33 @@ function primaryLesion(result?: BackendCaseResult): BackendLesionResult | null {
   return result?.lesions[0] ?? null
 }
 
-function SegmentationPreview({ lesion }: { lesion: BackendLesionResult }) {
-  const frames = [72, 78, 82, 86, 92]
-  const [slice, setSlice] = useState(82)
+function resolveDemoStageIndex(lesion: BackendLesionResult, result?: BackendCaseResult): number {
+  const meta = result?.metadata as { stage_index?: number; demo_stage?: string } | undefined
+  if (typeof meta?.stage_index === 'number') {
+    return meta.stage_index
+  }
+  const vol = lesion.measurements.volumeMm3
+  if (vol <= 1800) return 4
+  if (vol <= 2800) return 3
+  if (vol <= 3500) return 1
+  if (vol <= 6000) return 2
+  return 0
+}
+
+function SegmentationPreview({ lesion, result }: { lesion: BackendLesionResult; result?: BackendCaseResult }) {
+  const stageIndex = resolveDemoStageIndex(lesion, result)
+  const meta = result?.metadata as { stage_label?: string; demo_stage?: string } | undefined
+  const stageLabel = meta?.stage_label ?? (stageIndex > 0 ? `Follow-up #${stageIndex}` : 'Baseline Scan')
+  const frames = [72, 78, 82, 86, 92, 98, 102, 106, 110]
+  const initialSlice = stageIndex > 0 ? 102 : 82
+  const [slice, setSlice] = useState(initialSlice)
   const frameSlice = frames.reduce((best, current) =>
     Math.abs(current - slice) < Math.abs(best - slice) ? current : best
   )
-  const frameSrc = `/demo-assets/p01-t1c-seg-slice-${frameSlice}.png`
+  const frameSrc = `/demo-assets/demo-stage-${stageIndex}-slice-${frameSlice}.png`
 
   function step(delta: number) {
-    setSlice(prev => Math.min(92, Math.max(72, prev + delta)))
+    setSlice(prev => Math.min(110, Math.max(72, prev + delta)))
   }
 
   return (
@@ -72,8 +89,15 @@ function SegmentationPreview({ lesion }: { lesion: BackendLesionResult }) {
         }}
       >
         <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(13,197,160,0.08)_1px,transparent_1px),linear-gradient(0deg,rgba(13,197,160,0.08)_1px,transparent_1px)] bg-[size:72px_72px]" />
-        <div className="absolute left-5 top-5 z-10 border border-teal/30 bg-teal/10 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-teal">
-          Segmentation overlay
+        <div className="absolute left-5 top-5 z-10 flex items-center gap-2">
+          <span className="border border-teal/30 bg-teal/10 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-teal">
+            Segmentation overlay
+          </span>
+          {stageIndex > 0 && (
+            <span className="border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-emerald-300">
+              {stageLabel}
+            </span>
+          )}
         </div>
         <div className="absolute right-5 top-5 z-10 font-mono text-[10px] uppercase tracking-widest text-text3">
           Axial T1c · slice {String(frameSlice).padStart(3, '0')}/160
@@ -83,6 +107,13 @@ function SegmentationPreview({ lesion }: { lesion: BackendLesionResult }) {
           <div className="relative aspect-square h-full max-h-[448px] overflow-hidden border border-slate-700/70 bg-black shadow-[0_0_42px_rgba(0,0,0,0.55)]">
             <img
               src={frameSrc}
+              onError={e => {
+                // Fallback to legacy baseline slices if custom stage image fails
+                const img = e.currentTarget
+                if (!img.src.includes('p01-t1c-seg-slice')) {
+                  img.src = `/demo-assets/p01-t1c-seg-slice-${frameSlice}.png`
+                }
+              }}
               alt="Axial brain MRI with tumor segmentation overlay"
               className="h-full w-full object-contain"
             />
@@ -133,7 +164,8 @@ function SegmentationPreview({ lesion }: { lesion: BackendLesionResult }) {
             aria-label="MRI slice"
             type="range"
             min={72}
-            max={92}
+            max={110}
+            step={2}
             value={slice}
             onChange={event => setSlice(Number(event.target.value))}
             className="h-2 flex-1 accent-teal"
@@ -300,7 +332,7 @@ export default function RadiologistPatientResultPage() {
                     <ScanSearch size={15} />
                     Segmentation viewer
                   </div>
-                  <SegmentationPreview lesion={lesion} />
+                  <SegmentationPreview lesion={lesion} result={result} />
                 </section>
 
                 <section className="border border-border bg-surface p-5">
@@ -342,15 +374,34 @@ export default function RadiologistPatientResultPage() {
                         <div className="grid gap-2 border-y border-border py-3 sm:grid-cols-3">
                           <div>
                             <div className="font-mono text-[10px] uppercase tracking-widest text-text3">Current volume</div>
-                            <div className="mt-1 font-mono text-text1">{displayReport.quantitative.current_volume_cm3?.toFixed(2)} cm3</div>
+                            <div className="mt-1 font-mono text-text1">
+                              {typeof displayReport.quantitative.current_volume_cm3 === 'number'
+                                ? `${displayReport.quantitative.current_volume_cm3.toFixed(2)} cm³`
+                                : '—'}
+                            </div>
                           </div>
                           <div>
                             <div className="font-mono text-[10px] uppercase tracking-widest text-text3">Prior volume</div>
-                            <div className="mt-1 font-mono text-text1">{displayReport.quantitative.prior_volume_cm3?.toFixed(2)} cm3</div>
+                            <div className="mt-1 font-mono text-text1">
+                              {typeof displayReport.quantitative.prior_volume_cm3 === 'number'
+                                ? `${displayReport.quantitative.prior_volume_cm3.toFixed(2)} cm³`
+                                : 'None (Baseline)'}
+                            </div>
                           </div>
                           <div>
                             <div className="font-mono text-[10px] uppercase tracking-widest text-text3">Interval change</div>
-                            <div className="mt-1 font-mono text-amber">+{displayReport.quantitative.volume_change_pct?.toFixed(1)}%</div>
+                            <div className={cn(
+                              'mt-1 font-mono font-bold',
+                              typeof displayReport.quantitative.volume_change_pct === 'number' && displayReport.quantitative.volume_change_pct < 0
+                                ? 'text-teal'
+                                : typeof displayReport.quantitative.volume_change_pct === 'number' && displayReport.quantitative.volume_change_pct > 0
+                                ? 'text-amber'
+                                : 'text-text3'
+                            )}>
+                              {typeof displayReport.quantitative.volume_change_pct === 'number'
+                                ? `${displayReport.quantitative.volume_change_pct > 0 ? '+' : ''}${displayReport.quantitative.volume_change_pct.toFixed(1)}%`
+                                : 'Baseline reference'}
+                            </div>
                           </div>
                         </div>
                       ) : null}

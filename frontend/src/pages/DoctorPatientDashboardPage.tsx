@@ -260,6 +260,7 @@ export default function DoctorPatientDashboardPage() {
                 summary={summaryQuery.data}
                 patient={patient}
                 scan={selectedScan}
+                scans={scans}
               />
             ) : null}
           </div>
@@ -279,6 +280,7 @@ export default function DoctorPatientDashboardPage() {
             headingTitle="Upload MRI — segmentation pipeline"
             headingDescription="After ingestion completes, we attempt an automatic longitudinal comparison between the earliest and latest backend studies that have stored results (optionally filtered by this patient's linkedStudyIds when configured)."
             prefilledSourceLabel={patient ? `${patient.id} · ${patient.name}` : ''}
+            patientId={patient?.id || id}
             onJobReachedTerminal={payload => {
               queryClient.invalidateQueries({ queryKey: ['backend-studies'] })
               queryClient.invalidateQueries({ queryKey: ['scans', id] })

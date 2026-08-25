@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Scan } from '@/types'
 import {
   ChevronLeft,
@@ -32,7 +32,7 @@ interface Caliper {
 type Tool = 'brush' | 'ruler' | 'crosshair'
 type OverlayMode = 'all' | 'none'
 
-const FRAMES = [72, 78, 82, 86, 92]
+const FRAMES = [72, 78, 82, 86, 92, 98, 102, 106, 110]
 const MM_PER_PIXEL = 0.9375 // 240mm FOV / 256 matrix
 
 function calcDistanceMm(p1: Point, p2: Point): number {
@@ -41,20 +41,41 @@ function calcDistanceMm(p1: Point, p2: Point): number {
   return Math.sqrt(dx * dx + dy * dy) * MM_PER_PIXEL
 }
 
+function resolveDemoStageIndexFromScan(scan: Scan): number {
+  if (typeof scan.demoStageIndex === 'number') {
+    return scan.demoStageIndex
+  }
+  const vol = scan.volumeMm3
+  if (vol <= 1800) return 4
+  if (vol <= 2800) return 3
+  if (vol <= 3500) return 1
+  if (vol <= 6000) return 2
+  return 0
+}
+
 export default function MriWorkspace({ scan }: MriWorkspaceProps) {
+  const stageIndex = resolveDemoStageIndexFromScan(scan)
+  const initialSlice = stageIndex > 0 ? 102 : 82
   const [activeTool, setActiveTool] = useState<Tool>('ruler')
-  const [slice, setSlice] = useState(82)
+  const [slice, setSlice] = useState(initialSlice)
   const [zoomLevel, setZoomLevel] = useState<number>(1)
   const [overlayMode, setOverlayMode] = useState<OverlayMode>('all')
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null)
 
-  // Caliper state (default positioned on the tumor lesion)
-  const [caliper, setCaliper] = useState<Caliper | null>({
-    p1: { x: 106, y: 118 },
-    p2: { x: 175, y: 118 },
-  })
+  // Caliper state (default positioned on the tumor lesion, scaled for shrinking lesion)
+  const defaultCaliper = stageIndex > 0
+    ? { p1: { x: 118, y: 120 }, p2: { x: 154, y: 120 } }
+    : { p1: { x: 106, y: 118 }, p2: { x: 175, y: 118 } }
+
+  const [caliper, setCaliper] = useState<Caliper | null>(defaultCaliper)
   const [isDrawingCaliper, setIsDrawingCaliper] = useState(false)
   const [draggedHandle, setDraggedHandle] = useState<'p1' | 'p2' | null>(null)
+
+  // Update initial slice when scan changes
+  useEffect(() => {
+    setSlice(stageIndex > 0 ? 102 : 82)
+    setCaliper(defaultCaliper)
+  }, [scan.id, stageIndex])
 
   // Brush drawing strokes
   const [brushPaths, setBrushPaths] = useState<Point[][]>([])
@@ -65,10 +86,10 @@ export default function MriWorkspace({ scan }: MriWorkspaceProps) {
   const frameSlice = FRAMES.reduce((best, current) =>
     Math.abs(current - slice) < Math.abs(best - slice) ? current : best
   )
-  const frameSrc = `/demo-assets/p01-t1c-seg-slice-${frameSlice}.png`
+  const frameSrc = `/demo-assets/demo-stage-${stageIndex}-slice-${frameSlice}.png`
 
   function stepSlice(delta: number) {
-    setSlice(prev => Math.min(92, Math.max(72, prev + delta)))
+    setSlice(prev => Math.min(110, Math.max(72, prev + delta)))
   }
 
   function toggleZoom() {
@@ -224,6 +245,12 @@ export default function MriWorkspace({ scan }: MriWorkspaceProps) {
             {/* Real MRI Slice Image with AI Segmentation Overlay */}
             <img
               src={frameSrc}
+              onError={e => {
+                const img = e.currentTarget
+                if (!img.src.includes('p01-t1c-seg-slice')) {
+                  img.src = `/demo-assets/p01-t1c-seg-slice-${frameSlice}.png`
+                }
+              }}
               alt={`Axial MRI scan slice ${frameSlice}`}
               className={cn(
                 'h-full w-full object-contain pointer-events-none select-none',

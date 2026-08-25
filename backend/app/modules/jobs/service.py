@@ -89,6 +89,19 @@ def _resolve_or_create_patient(
             pass
         if not patient:
             patient = session.query(Patient).filter(Patient.pseudonym == patient_id_input).first()
+
+        # If the requested patient is the demo patient P-9001 and not yet in the DB, materialize it
+        if patient is None and patient_id_input == "P-9001":
+            patient = Patient(
+                public_id=uuid4(),
+                pseudonym="P-9001",
+                diagnosis="Demo lesion (sample BraTS volumes)",
+                diagnosis_location="See repo data/P01",
+                status="active",
+            )
+            session.add(patient)
+            session.flush()
+
         if patient is None:
             raise SubmissionValidationError(404, f"Patient {patient_id_input} not found")
 
@@ -104,9 +117,13 @@ def _resolve_or_create_patient(
                 .first()
             )
             if existing_assign is None:
-                raise SubmissionValidationError(
-                    403, "You do not have access to this patient record"
-                )
+                if patient.pseudonym == "P-9001" and current_user.role in {"doctor", "clinician", "radiologist", "researcher"}:
+                    session.add(Assignment(doctor_id=current_user.id, patient_id=patient.id))
+                    session.flush()
+                else:
+                    raise SubmissionValidationError(
+                        403, "You do not have access to this patient record"
+                    )
         return patient
 
     patient = Patient(
