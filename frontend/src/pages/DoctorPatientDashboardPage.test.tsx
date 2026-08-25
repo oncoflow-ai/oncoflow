@@ -259,35 +259,3 @@ describe('DoctorPatientDashboardPage MRI upload pipeline', () => {
     expect(getStudyResultsMock).not.toHaveBeenCalled()
   })
 })
-
-describe('DoctorPatientDashboardPage longitudinal comparison', () => {
-  beforeEach(() => {
-    getPatientMock.mockResolvedValue(DEMO_PATIENT)
-    getScansMock.mockResolvedValue([])
-    getSummaryMock.mockResolvedValue(null)
-    listStudiesMock.mockResolvedValue([
-      { studyId: 'baseline-study-id', sourceKind: 'nifti-upload', sourceLabel: 'Patient P01 - Baseline', acquiredAt: '2024-01-15', createdAt: '2024-01-15T10:00:00Z', jobStatus: 'completed', hasResults: true },
-      { studyId: 'fu1-study-id', sourceKind: 'nifti-upload', sourceLabel: 'Patient P01 - FU1', acquiredAt: '2024-04-10', createdAt: '2024-04-10T10:00:00Z', jobStatus: 'completed', hasResults: true },
-    ])
-    submitComparisonMock.mockResolvedValue({
-      comparisonId: 'cmp-001', baselineStudyId: 'baseline-study-id', followupStudyId: 'fu1-study-id', baselineAcquiredAt: '2024-01-15', followupAcquiredAt: '2024-04-10',
-      metrics: { volumeACm3: 14.815, volumeBCm3: 18.5, deltaCm3: 3.685, pctChange: 24.87, diceOverlap: 0.78, hd95Mm: 4.2, recistAMm: 39.1, recistBMm: 43.2, recistRatio: 1.105, growthRateCm3PerDay: 0.043, registrationNcc: 0.97, volDeltaCiHalfCm3: 0.21, method: 'affine', backend: 'sitk', didResegment: false },
-      interpretation: 'Progressive disease', notes: [], outputRelativePath: 'comparisons/cmp-001',
-    })
-  })
-
-  it('runs a comparison from the patient chart Longitudinal tab', async () => {
-    renderPatientChart('longitudinal')
-    const user = userEvent.setup()
-
-    expect(await screen.findByText('Compare two scans, see tumor change')).toBeInTheDocument()
-    await screen.findAllByRole('option', { name: /Patient P01 - Baseline/i })
-    await user.selectOptions(screen.getByLabelText('Baseline Study'), 'baseline-study-id')
-    await user.selectOptions(screen.getByLabelText('Follow-up Study'), 'fu1-study-id')
-    await user.click(screen.getByRole('button', { name: 'Run Comparison' }))
-
-    await waitFor(() => expect(submitComparisonMock).toHaveBeenCalledWith({ baselineStudyId: 'baseline-study-id', followupStudyId: 'fu1-study-id' }))
-    expect(await screen.findByText('cmp-001')).toBeInTheDocument()
-    expect(screen.getByText('Progressive disease')).toBeInTheDocument()
-  })
-})

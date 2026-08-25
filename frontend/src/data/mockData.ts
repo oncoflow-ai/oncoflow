@@ -9,8 +9,8 @@ export const mockPatients: Patient[] = [
     diagnosisLocation: 'See repo data/P01',
     assignedPhysicianId: 'DR-001',
     status: 'active',
-    scanCount: 0,
-    lastScanDate: '2024-01-01',
+    scanCount: 2,
+    lastScanDate: '2024-06-15',
   },
   {
     id: 'P-1029',
@@ -103,7 +103,36 @@ export const mockPatients: Patient[] = [
 ]
 
 export const mockScans: Record<string, Scan[]> = {
-  'P-9001': [],
+  'P-9001': [
+    {
+      id: 'SCN-9001',
+      patientId: 'P-9001',
+      studyLabel: 'MRI Study #1 (Baseline)',
+      date: '2024-01-15',
+      modality: 'MRI',
+      sequence: 'T1c',
+      plane: 'AXIAL',
+      sliceCount: 160,
+      resolution: '1.0mm iso',
+      volumeMm3: 12920,
+      maxDiameterMm: 35.8,
+      isAnnotated: true,
+    },
+    {
+      id: 'SCN-9002',
+      patientId: 'P-9001',
+      studyLabel: 'MRI Study #2 (Follow-up)',
+      date: '2024-06-15',
+      modality: 'MRI',
+      sequence: 'T1c',
+      plane: 'AXIAL',
+      sliceCount: 160,
+      resolution: '1.0mm iso',
+      volumeMm3: 14815,
+      maxDiameterMm: 64.8,
+      isAnnotated: true,
+    },
+  ],
   'P-1029': [
     { id: 'SCN-0039', patientId: 'P-1029', studyLabel: 'MRI Study #1', date: '2025-09-14', modality: 'MRI', sequence: 'T1W', plane: 'AXIAL', sliceCount: 128, resolution: '1.2mm iso', volumeMm3: 18400, maxDiameterMm: 34.2, isAnnotated: true },
     { id: 'SCN-0040', patientId: 'P-1029', studyLabel: 'MRI Study #2', date: '2025-12-02', modality: 'MRI', sequence: 'T1W', plane: 'AXIAL', sliceCount: 128, resolution: '1.2mm iso', volumeMm3: 15200, maxDiameterMm: 31.1, isAnnotated: true },
@@ -151,12 +180,26 @@ export const mockScans: Record<string, Scan[]> = {
 export const mockSummaries: Record<string, Summary> = {
   'P-9001': {
     patientId: 'P-9001',
-    generatedAt: '2026-05-02T12:00:00Z',
-    model: 'Demo narrative',
-    text: `This roster row pairs with **data/P01** sample volumes for live uploads. Sign in as Radiologist, select Demo Patient P01, upload baseline and follow-up NIfTI volumes plus masks per DEMO.md, then open Longitudinal Comparison. Mock scans above stay empty until you rely on demo MRI scaffolding separately.`,
+    generatedAt: '2026-06-15T12:00:00Z',
+    model: 'MedGemma 1.5 (RAG-augmented)',
+    text: `Comparative longitudinal analysis of axial T1-weighted post-contrast (T1c) and FLAIR MRI acquisitions for Demo Patient P01 reveals **mild interval tumor progression**.
+
+**Volumetric Findings:**
+Automated volumetric segmentation by nnU-Net demonstrates an increase in enhancing tumor core volume from **12,920 mm³** on baseline (2024-01-15) to **14,815 mm³** on follow-up study (2024-06-15) — representing a **+14.7% volume increase**. Longest axial diameter has enlarged from 35.8 mm to 64.8 mm.
+
+**Morphology & Edema Extent:**
+The lesion is centered in the right fronto-parietal white matter with moderate surrounding vasogenic edema extending into the corona radiata. No midline shift or uncal herniation is observed. Ventricular caliber is preserved.
+
+**Impression & Multi-Agent Consensus:**
+1. Right cerebral intra-axial enhancing mass with measurable interval enlargement (+14.7% volume).
+2. Findings warrant neuro-oncology multidisciplinary review and continued 3-month imaging surveillance.`,
+    findings: 'Solitary enhancing intra-axial right hemisphere mass with perilesional FLAIR hyperintensity.',
+    impression: 'Mild interval volumetric progression (+14.7% volume, 12,920 -> 14,815 mm3).',
+    comparison: 'Compared with baseline MRI (2024-01-15), total tumor volume increased by 14.7%.',
     recommendations: [
-      'Follow longitudinal metrics after radiologist uploads complete.',
-      'Discuss treatment planning only with your clinical team.',
+      'Schedule follow-up contrast-enhanced brain MRI in 3 months.',
+      'Multidisciplinary neuro-oncology board review for treatment adjustment.',
+      'Correlate with clinical neurological exam and dexamethasone dosing.',
     ],
   },
   'P-1029': {

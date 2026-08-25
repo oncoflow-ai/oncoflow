@@ -4,7 +4,7 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Float, JSON, Date, DateTime, ForeignKey, String, Text
+from sqlalchemy import Float, Integer, JSON, Date, DateTime, ForeignKey, String, Text
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import Uuid
@@ -186,6 +186,8 @@ class Job(Base):
     job_type: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(32), index=True)
     stage: Mapped[str] = mapped_column(String(32))
+    progress: Mapped[int | None] = mapped_column(Integer, default=0, nullable=True)
+    stage_message: Mapped[str | None] = mapped_column(String(255), nullable=True)
     failure_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(

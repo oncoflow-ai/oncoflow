@@ -610,7 +610,8 @@ def test_demo_mri_worker_exposes_running_state_before_delay(
         with create_session_factory()() as polling_session:
             polled_job = polling_session.query(Job).filter(Job.public_id == job_id).one()
             assert polled_job.status == "running"
-            assert polled_job.stage == "demo-inference"
+            assert polled_job.stage in {"data-fetching", "demo-inference"}
+            assert polled_job.progress >= 15
     finally:
         release_delay.set()
         worker_thread.join(timeout=3)
@@ -648,6 +649,8 @@ def test_demo_mri_segmentation_completes_and_exposes_report(
     assert status_response.status_code == 200
     assert status_response.json()["status"] == "completed"
     assert status_response.json()["stage"] == "completed"
+    assert status_response.json()["progress"] == 100
+    assert status_response.json()["stageMessage"] is not None
 
     result_response = client.get(f"/api/v1/results/{submitted['studyId']}")
     assert result_response.status_code == 200

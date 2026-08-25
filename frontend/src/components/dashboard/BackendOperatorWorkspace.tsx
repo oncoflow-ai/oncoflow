@@ -47,6 +47,49 @@ function StatusBadge({ status }: { status: BackendJobStatus }) {
   )
 }
 
+const ALGORITHM_STAGES = [
+  {
+    id: 'data-fetching',
+    stepNumber: 1,
+    title: 'Data Ingestion & Loading',
+    description: 'Validating MRI volume format, headers, and preparing tensor inputs',
+    minProgress: 15,
+    matchingStages: ['staged', 'profiling', 'data-fetching', 'prepare-inputs'],
+  },
+  {
+    id: 'bone-extraction',
+    stepNumber: 2,
+    title: 'Bone & Landmark Extraction',
+    description: 'Extracting skeletal boundaries, bone contours, and spatial landmarks',
+    minProgress: 35,
+    matchingStages: ['bone-extraction'],
+  },
+  {
+    id: 'segmentation',
+    stepNumber: 3,
+    title: 'AI Tumor Segmentation',
+    description: 'Running deep learning multi-planar tumor segmentation models',
+    minProgress: 65,
+    matchingStages: ['segmentation', 'infer', 'demo-inference'],
+  },
+  {
+    id: 'quantification',
+    stepNumber: 4,
+    title: 'Volumetric Quantification',
+    description: 'Calculating tumor volume (mm³), max axial diameter, and lesion extent',
+    minProgress: 80,
+    matchingStages: ['quantification', 'postprocess', 'package-results'],
+  },
+  {
+    id: 'report-generation',
+    stepNumber: 5,
+    title: 'Clinical Report Creation',
+    description: 'Synthesizing structured findings, recommendations, and artifacts',
+    minProgress: 95,
+    matchingStages: ['report-generation', 'materialize-results'],
+  },
+] as const
+
 export interface BackendOperatorWorkspaceProps {
   headingEyebrow?: string
   headingTitle?: string
@@ -168,7 +211,7 @@ export default function BackendOperatorWorkspace({
     enabled: !!activeRun?.jobId,
     refetchInterval: query => {
       const data = query.state.data as BackendJobStatusResponse | undefined
-      return data && ACTIVE_STATUSES.includes(data.status) ? 1500 : false
+      return data && ACTIVE_STATUSES.includes(data.status) ? 800 : false
     },
   })
 
@@ -446,50 +489,155 @@ export default function BackendOperatorWorkspace({
               description="Upload a NIfTI scan (and optional mask) or zipped DICOM study to start live backend tracking from this dashboard."
               className="min-h-[220px] border border-dashed border-border2 bg-surface"
             />
-          ) : (
-            <div className="space-y-4">
-              <div className="rounded border border-border2 bg-surface p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] font-mono uppercase tracking-[0.18em] text-text3">Run status</p>
-                    <p className="mt-1 text-[18px] font-sans font-semibold text-text1">{jobStatus.stage}</p>
+          ) : (() => {
+            const currentProgress = jobStatus.status === 'completed'
+              ? 100
+              : Math.min(100, Math.max(0, jobStatus.progress ?? (jobStatus.status === 'queued' ? 0 : 15)))
+
+            const currentMessage = jobStatus.status === 'failed'
+              ? 'This analysis could not be completed. Please try again or contact support.'
+              : (jobStatus.stageMessage || (
+                jobStatus.status === 'completed'
+                  ? 'Analysis completed successfully. Structured report and measurements are ready.'
+                  : 'Algorithm running on MRI scan...'
+              ))
+
+            return (
+              <div className="space-y-4">
+                {/* Header & Status */}
+                <div className="rounded border border-border2 bg-surface p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-mono uppercase tracking-[0.18em] text-text3">Algorithm Status</p>
+                      <p className="mt-1 text-[16px] font-sans font-semibold text-text1 capitalize">{jobStatus.stage.replace(/-/g, ' ')}</p>
+                    </div>
+                    {'status' in jobStatus && <StatusBadge status={jobStatus.status} />}
                   </div>
-                  {'status' in jobStatus && <StatusBadge status={jobStatus.status} />}
-                </div>
-                <p className="text-[13px] leading-relaxed text-text2">
-                  We prepare the images, run segmentation, and package a review-ready result for this patient.
-                </p>
-              </div>
 
-              <div className="rounded border border-border2 bg-surface p-4">
-                <div className="flex items-center gap-2 text-[12px] text-text2">
-                  {jobStatusQuery.isFetching && ACTIVE_STATUSES.includes(jobStatus.status) ? (
-                    <>
-                      <LoaderCircle size={14} className="animate-spin text-teal" />
-                      Polling backend for the latest stage update
-                    </>
-                  ) : jobStatus.status === 'completed' ? (
-                    <>
-                      <CheckCircle2 size={14} className="text-teal" />
-                      Analysis complete. Opening the clinical result…
-                    </>
-                  ) : jobStatus.status === 'failed' ? (
-                    <>
-                      <AlertCircle size={14} className="text-danger" />
-                      This analysis could not be completed. Please try again or contact support.
-                    </>
-                  ) : (
-                    <>
-                      <Clock3 size={14} className="text-amber" />
-                      Waiting for the next backend transition.
-                    </>
-                  )}
-                </div>
-              </div>
+                  {/* Percentage Progress Bar */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-[11px] font-mono">
+                      <span className="text-text3 uppercase tracking-wider">Progress</span>
+                      <span className="font-bold text-teal">{currentProgress}%</span>
+                    </div>
+                    <div className="relative h-2.5 w-full overflow-hidden rounded-full bg-surface3 border border-border2">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-teal/80 to-teal transition-all duration-500 ease-out shadow-[0_0_10px_rgba(20,184,166,0.4)]"
+                        style={{ width: `${currentProgress}%` }}
+                      />
+                    </div>
+                  </div>
 
-              {jobFetchError && <ErrorBanner message="We couldn't retrieve the latest analysis status. Please refresh and try again." />}
-            </div>
-          )}
+                  {/* Live Status Message */}
+                  <div className="mt-3 flex items-start gap-2 rounded border border-teal/20 bg-teal/5 p-2.5 text-[12px] leading-relaxed text-text2">
+                    {jobStatus.status === 'completed' ? (
+                      <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-teal" />
+                    ) : jobStatus.status === 'failed' ? (
+                      <AlertCircle size={16} className="mt-0.5 shrink-0 text-danger" />
+                    ) : (
+                      <LoaderCircle size={16} className="mt-0.5 shrink-0 animate-spin text-teal" />
+                    )}
+                    <span>{currentMessage}</span>
+                  </div>
+                </div>
+
+                {/* Algorithm Stages Stepper */}
+                <div className="rounded border border-border2 bg-surface p-4">
+                  <p className="mb-3 font-mono text-[11px] font-bold uppercase tracking-[0.18em] text-text3">
+                    Algorithm Pipeline Stages
+                  </p>
+                  <div className="space-y-2.5">
+                    {ALGORITHM_STAGES.map(stage => {
+                      let stageState: 'completed' | 'active' | 'pending' | 'failed' = 'pending'
+                      if (jobStatus.status === 'completed') {
+                        stageState = 'completed'
+                      } else if (jobStatus.status === 'failed') {
+                        stageState = currentProgress >= stage.minProgress ? 'completed' : 'failed'
+                      } else if (stage.matchingStages.includes(jobStatus.stage) || (currentProgress >= stage.minProgress && currentProgress < stage.minProgress + 20)) {
+                        stageState = 'active'
+                      } else if (currentProgress > stage.minProgress) {
+                        stageState = 'completed'
+                      }
+
+                      return (
+                        <div
+                          key={stage.id}
+                          className={cn(
+                            'flex items-start gap-3 rounded border p-2.5 transition-colors',
+                            stageState === 'active'
+                              ? 'border-teal/50 bg-teal/10'
+                              : stageState === 'completed'
+                                ? 'border-border2 bg-surface2/50'
+                                : 'border-border/60 bg-surface/30 opacity-70'
+                          )}
+                        >
+                          <div className="mt-0.5 shrink-0">
+                            {stageState === 'completed' ? (
+                              <CheckCircle2 size={16} className="text-teal" />
+                            ) : stageState === 'active' ? (
+                              <LoaderCircle size={16} className="animate-spin text-teal" />
+                            ) : (
+                              <span className="flex h-4 w-4 items-center justify-center rounded-full border border-border2 font-mono text-[10px] text-text3">
+                                {stage.stepNumber}
+                              </span>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className={cn(
+                                'text-[12px] font-medium',
+                                stageState === 'active' ? 'text-teal font-semibold' : stageState === 'completed' ? 'text-text1' : 'text-text3'
+                              )}>
+                                {stage.title}
+                              </span>
+                              <span className={cn(
+                                'font-mono text-[10px] uppercase tracking-wider',
+                                stageState === 'active' ? 'text-teal font-bold' : stageState === 'completed' ? 'text-text3' : 'text-text3/60'
+                              )}>
+                                {stageState === 'active' ? 'IN PROGRESS' : stageState === 'completed' ? 'DONE' : 'PENDING'}
+                              </span>
+                            </div>
+                            <p className="mt-0.5 text-[11px] text-text3 leading-snug">
+                              {stage.description}
+                            </p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Polling Indicator */}
+                <div className="rounded border border-border2 bg-surface p-3">
+                  <div className="flex items-center gap-2 text-[11px] font-mono text-text3">
+                    {jobStatusQuery.isFetching && ACTIVE_STATUSES.includes(jobStatus.status) ? (
+                      <>
+                        <LoaderCircle size={12} className="animate-spin text-teal" />
+                        <span>Live backend polling active (800ms updates)</span>
+                      </>
+                    ) : jobStatus.status === 'completed' ? (
+                      <>
+                        <CheckCircle2 size={12} className="text-teal" />
+                        <span>Completed · Opening clinical result viewer</span>
+                      </>
+                    ) : jobStatus.status === 'failed' ? (
+                      <>
+                        <AlertCircle size={12} className="text-danger" />
+                        <span>Analysis stopped with error</span>
+                      </>
+                    ) : (
+                      <>
+                        <Clock3 size={12} className="text-amber" />
+                        <span>Waiting for next stage transition</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {jobFetchError && <ErrorBanner message="We couldn't retrieve the latest analysis status. Please refresh and try again." />}
+              </div>
+            )
+          })()}
         </div>
       </div>
 

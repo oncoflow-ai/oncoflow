@@ -26,6 +26,8 @@ class JobSubmissionResponse(CamelModel):
     study_id: str
     status: str
     stage: str
+    progress: int = 0
+    stage_message: str | None = None
     submitted_at: datetime
 
 

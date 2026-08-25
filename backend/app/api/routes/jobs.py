@@ -49,6 +49,8 @@ async def submit_mri_ingestion_job(
         study_id=str(submission.study_public_id),
         status=submission.status,
         stage=submission.stage,
+        progress=submission.progress,
+        stage_message=submission.stage_message,
         submitted_at=submission.submitted_at,
     )
 
@@ -101,6 +103,8 @@ async def submit_nifti_segmentation_job(
         study_id=str(submission.study_public_id),
         status=submission.status,
         stage=submission.stage,
+        progress=submission.progress,
+        stage_message=submission.stage_message,
         submitted_at=submission.submitted_at,
     )
 
@@ -145,6 +149,8 @@ async def submit_demo_mri_segmentation_job(
         study_id=str(submission.study_public_id),
         status=submission.status,
         stage=submission.stage,
+        progress=submission.progress,
+        stage_message=submission.stage_message,
         submitted_at=submission.submitted_at,
     )
 
@@ -186,6 +192,8 @@ def get_job_status(
         study_id=str(job_status.study_public_id),
         status=job_status.status,
         stage=job_status.stage,
+        progress=job_status.progress,
+        stage_message=job_status.stage_message,
         submitted_at=job_status.submitted_at,
         error=job_status.error,
     )
