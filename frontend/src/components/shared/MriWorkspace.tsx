@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { Scan } from '@/types'
 import {
   ChevronLeft,
@@ -7,7 +7,6 @@ import {
   Eye,
   EyeOff,
   Layers,
-  Maximize2,
   Pencil,
   RotateCcw,
   Ruler,
@@ -20,18 +19,48 @@ interface MriWorkspaceProps {
   scan: Scan
 }
 
-type Tool = 'brush' | 'ruler' | 'crosshair' | 'delete'
-type OverlayMode = 'all' | 'contour' | 'none'
+interface Point {
+  x: number // 0..256
+  y: number // 0..256
+}
+
+interface Caliper {
+  p1: Point
+  p2: Point
+}
+
+type Tool = 'brush' | 'ruler' | 'crosshair'
+type OverlayMode = 'all' | 'none'
 
 const FRAMES = [72, 78, 82, 86, 92]
+const MM_PER_PIXEL = 0.9375 // 240mm FOV / 256 matrix
+
+function calcDistanceMm(p1: Point, p2: Point): number {
+  const dx = p2.x - p1.x
+  const dy = p2.y - p1.y
+  return Math.sqrt(dx * dx + dy * dy) * MM_PER_PIXEL
+}
 
 export default function MriWorkspace({ scan }: MriWorkspaceProps) {
-  const [activeTool, setActiveTool] = useState<Tool>('brush')
+  const [activeTool, setActiveTool] = useState<Tool>('ruler')
   const [slice, setSlice] = useState(82)
   const [zoomLevel, setZoomLevel] = useState<number>(1)
   const [overlayMode, setOverlayMode] = useState<OverlayMode>('all')
-  const [showRuler, setShowRuler] = useState(true)
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null)
+
+  // Caliper state (default positioned on the tumor lesion)
+  const [caliper, setCaliper] = useState<Caliper | null>({
+    p1: { x: 106, y: 118 },
+    p2: { x: 175, y: 118 },
+  })
+  const [isDrawingCaliper, setIsDrawingCaliper] = useState(false)
+  const [draggedHandle, setDraggedHandle] = useState<'p1' | 'p2' | null>(null)
+
+  // Brush drawing strokes
+  const [brushPaths, setBrushPaths] = useState<Point[][]>([])
+  const [currentPath, setCurrentPath] = useState<Point[] | null>(null)
+
+  const imageContainerRef = useRef<HTMLDivElement>(null)
 
   const frameSlice = FRAMES.reduce((best, current) =>
     Math.abs(current - slice) < Math.abs(best - slice) ? current : best
@@ -46,12 +75,73 @@ export default function MriWorkspace({ scan }: MriWorkspaceProps) {
     setZoomLevel(prev => (prev === 1 ? 1.4 : prev === 1.4 ? 2 : 1))
   }
 
-  function handleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
-    const rect = e.currentTarget.getBoundingClientRect()
-    const x = Math.round(((e.clientX - rect.left) / rect.width) * 256)
-    const y = Math.round(((e.clientY - rect.top) / rect.height) * 256)
-    setMousePos({ x, y })
+  function getNormalizedCoords(e: React.MouseEvent<HTMLDivElement>): Point {
+    if (!imageContainerRef.current) return { x: 128, y: 128 }
+    const rect = imageContainerRef.current.getBoundingClientRect()
+    const x = Math.max(0, Math.min(256, Math.round(((e.clientX - rect.left) / rect.width) * 256)))
+    const y = Math.max(0, Math.min(256, Math.round(((e.clientY - rect.top) / rect.height) * 256)))
+    return { x, y }
   }
+
+  function handleMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+    const pt = getNormalizedCoords(e)
+
+    if (activeTool === 'ruler') {
+      // Check if user clicked near existing caliper handles (within 14px)
+      if (caliper) {
+        const d1 = Math.hypot(pt.x - caliper.p1.x, pt.y - caliper.p1.y)
+        const d2 = Math.hypot(pt.x - caliper.p2.x, pt.y - caliper.p2.y)
+        if (d1 < 14) {
+          setDraggedHandle('p1')
+          return
+        }
+        if (d2 < 14) {
+          setDraggedHandle('p2')
+          return
+        }
+      }
+
+      // Start new caliper measurement
+      setCaliper({ p1: pt, p2: pt })
+      setIsDrawingCaliper(true)
+    } else if (activeTool === 'brush') {
+      setCurrentPath([pt])
+    }
+  }
+
+  function handleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    const pt = getNormalizedCoords(e)
+    setMousePos(pt)
+
+    if (activeTool === 'ruler') {
+      if (draggedHandle && caliper) {
+        if (draggedHandle === 'p1') {
+          setCaliper({ ...caliper, p1: pt })
+        } else {
+          setCaliper({ ...caliper, p2: pt })
+        }
+      } else if (isDrawingCaliper && caliper) {
+        setCaliper({ ...caliper, p2: pt })
+      }
+    } else if (activeTool === 'brush' && currentPath) {
+      setCurrentPath(prev => (prev ? [...prev, pt] : [pt]))
+    }
+  }
+
+  function handleMouseUp() {
+    if (isDrawingCaliper) {
+      setIsDrawingCaliper(false)
+    }
+    if (draggedHandle) {
+      setDraggedHandle(null)
+    }
+    if (currentPath) {
+      setBrushPaths(prev => [...prev, currentPath])
+      setCurrentPath(null)
+    }
+  }
+
+  const measuredDistanceMm = caliper ? calcDistanceMm(caliper.p1, caliper.p2) : 0
 
   return (
     <aside className="w-[340px] xl:w-[400px] shrink-0 bg-[#060810] border-l border-border flex flex-col select-none">
@@ -85,31 +175,50 @@ export default function MriWorkspace({ scan }: MriWorkspaceProps) {
           e.preventDefault()
           stepSlice(e.deltaY > 0 ? 1 : -1)
         }}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={() => setMousePos(null)}
+        onMouseLeave={() => {
+          setMousePos(null)
+          handleMouseUp()
+        }}
       >
         {/* HUD Top Bar */}
         <div className="absolute top-2.5 inset-x-3 z-20 flex items-center justify-between pointer-events-none">
           <div className="font-mono text-[10px] bg-bg/85 border border-border2 px-2 py-0.5 text-text2">
             Axial · Slice {String(frameSlice).padStart(3, '0')} / {scan.sliceCount}
           </div>
-          <div className="font-mono text-[10px] bg-bg/85 border border-border2 px-2 py-0.5 text-teal">
-            Zoom: {zoomLevel}x
+          <div className="flex items-center gap-1.5">
+            {caliper && (
+              <div className="font-mono text-[10px] bg-teal/15 border border-teal/40 px-2 py-0.5 text-teal font-bold shadow-[0_0_8px_rgba(13,197,160,0.2)]">
+                Caliper: {measuredDistanceMm.toFixed(1)} mm
+              </div>
+            )}
+            <div className="font-mono text-[10px] bg-bg/85 border border-border2 px-2 py-0.5 text-teal">
+              {zoomLevel}x
+            </div>
           </div>
         </div>
 
-        {/* Center Image Container */}
+        {/* Center Image Viewport Container */}
         <div className="relative flex-1 flex items-center justify-center p-3 overflow-hidden">
           {/* Viewport Crosshair Guides */}
-          {activeTool === 'crosshair' && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-              <div className="absolute left-0 right-0 h-px bg-teal/20" />
-              <div className="absolute top-0 bottom-0 w-px bg-teal/20" />
+          {activeTool === 'crosshair' && mousePos && (
+            <div className="absolute inset-0 pointer-events-none z-10">
+              <div
+                className="absolute left-0 right-0 h-px bg-teal/40"
+                style={{ top: `${(mousePos.y / 256) * 100}%` }}
+              />
+              <div
+                className="absolute top-0 bottom-0 w-px bg-teal/40"
+                style={{ left: `${(mousePos.x / 256) * 100}%` }}
+              />
             </div>
           )}
 
           <div
-            className="relative aspect-square w-full max-w-[280px] xl:max-w-[320px] overflow-hidden rounded border border-border/70 bg-black shadow-2xl transition-transform duration-150 ease-out"
+            ref={imageContainerRef}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            className="relative aspect-square w-full max-w-[280px] xl:max-w-[320px] overflow-hidden rounded border border-border/70 bg-black shadow-2xl transition-transform duration-150 ease-out cursor-crosshair"
             style={{ transform: `scale(${zoomLevel})` }}
           >
             {/* Real MRI Slice Image with AI Segmentation Overlay */}
@@ -117,29 +226,101 @@ export default function MriWorkspace({ scan }: MriWorkspaceProps) {
               src={frameSrc}
               alt={`Axial MRI scan slice ${frameSlice}`}
               className={cn(
-                'h-full w-full object-contain pointer-events-none',
+                'h-full w-full object-contain pointer-events-none select-none',
                 overlayMode === 'none' && 'grayscale contrast-125 brightness-110'
               )}
+              draggable={false}
             />
 
-            {/* Caliper measurement annotation line when ruler tool is active or enabled */}
-            {showRuler && (
-              <div className="absolute pointer-events-none inset-0 flex items-center justify-center">
-                <div
-                  className="relative"
-                  style={{
-                    width: 72,
-                    top: -12,
-                    left: 24,
-                    borderTop: '1.5px dashed #0DC5A0',
-                  }}
-                >
-                  <div className="absolute -left-1 -top-1 w-2 h-2 rounded-full bg-teal shadow-[0_0_6px_#0DC5A0]" />
-                  <div className="absolute -right-1 -top-1 w-2 h-2 rounded-full bg-teal shadow-[0_0_6px_#0DC5A0]" />
-                  <div className="absolute -top-5 left-1/2 -translate-x-1/2 font-mono text-[10px] font-bold text-teal bg-bg/90 px-1.5 py-0.2 rounded border border-teal/40 shadow">
-                    {scan.maxDiameterMm} mm
-                  </div>
-                </div>
+            {/* SVG Annotation & Interactive Caliper Layer */}
+            <svg
+              viewBox="0 0 256 256"
+              className="absolute inset-0 w-full h-full pointer-events-none"
+            >
+              {/* Brush Stored Strokes */}
+              {brushPaths.map((path, idx) => (
+                <polyline
+                  key={idx}
+                  points={path.map(p => `${p.x},${p.y}`).join(' ')}
+                  fill="none"
+                  stroke="#0DC5A0"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity="0.8"
+                />
+              ))}
+
+              {/* Current Active Brush Stroke */}
+              {currentPath && currentPath.length > 1 && (
+                <polyline
+                  points={currentPath.map(p => `${p.x},${p.y}`).join(' ')}
+                  fill="none"
+                  stroke="#0DC5A0"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity="0.9"
+                />
+              )}
+
+              {/* Interactive Caliper Ruler */}
+              {caliper && (
+                <g className="cursor-pointer">
+                  {/* Outer glow line */}
+                  <line
+                    x1={caliper.p1.x}
+                    y1={caliper.p1.y}
+                    x2={caliper.p2.x}
+                    y2={caliper.p2.y}
+                    stroke="rgba(13,197,160,0.3)"
+                    strokeWidth="4"
+                  />
+                  {/* Dashed measurement line */}
+                  <line
+                    x1={caliper.p1.x}
+                    y1={caliper.p1.y}
+                    x2={caliper.p2.x}
+                    y2={caliper.p2.y}
+                    stroke="#0DC5A0"
+                    strokeWidth="1.5"
+                    strokeDasharray="4,3"
+                  />
+                  {/* Endpoint 1 Handle */}
+                  <circle
+                    cx={caliper.p1.x}
+                    y1={caliper.p1.y}
+                    cy={caliper.p1.y}
+                    r="4"
+                    fill="#0DC5A0"
+                    stroke="#060810"
+                    strokeWidth="1.5"
+                    className="hover:scale-150 transition-transform"
+                  />
+                  {/* Endpoint 2 Handle */}
+                  <circle
+                    cx={caliper.p2.x}
+                    cy={caliper.p2.y}
+                    r="4"
+                    fill="#0DC5A0"
+                    stroke="#060810"
+                    strokeWidth="1.5"
+                    className="hover:scale-150 transition-transform"
+                  />
+                </g>
+              )}
+            </svg>
+
+            {/* Floating Distance Badge above the caliper line */}
+            {caliper && (
+              <div
+                className="absolute pointer-events-none font-mono text-[9px] font-bold text-teal bg-bg/95 border border-teal/40 px-1.5 py-0.5 rounded shadow-lg -translate-x-1/2 -translate-y-full"
+                style={{
+                  left: `${((caliper.p1.x + caliper.p2.x) / 2 / 256) * 100}%`,
+                  top: `${((caliper.p1.y + caliper.p2.y) / 2 / 256) * 100 - 3}%`,
+                }}
+              >
+                {measuredDistanceMm.toFixed(1)} mm
               </div>
             )}
 
@@ -210,26 +391,8 @@ export default function MriWorkspace({ scan }: MriWorkspaceProps) {
         <div className="flex items-center gap-1.5">
           <button
             type="button"
-            onClick={() => setActiveTool('brush')}
-            title="Brush annotation"
-            aria-label="Brush annotation"
-            className={cn(
-              'w-8 h-8 flex items-center justify-center border transition-colors',
-              activeTool === 'brush'
-                ? 'bg-teal/15 border-teal text-teal'
-                : 'bg-surface2 border-border2 text-text2 hover:border-text3'
-            )}
-          >
-            <Pencil size={13} />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTool('ruler')
-              setShowRuler(true)
-            }}
-            title="Measure diameter"
+            onClick={() => setActiveTool('ruler')}
+            title="Measure diameter (click & drag to measure)"
             aria-label="Measure diameter"
             className={cn(
               'w-8 h-8 flex items-center justify-center border transition-colors',
@@ -239,6 +402,21 @@ export default function MriWorkspace({ scan }: MriWorkspaceProps) {
             )}
           >
             <Ruler size={13} />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTool('brush')}
+            title="Brush annotation (click & drag to draw)"
+            aria-label="Brush annotation"
+            className={cn(
+              'w-8 h-8 flex items-center justify-center border transition-colors',
+              activeTool === 'brush'
+                ? 'bg-teal/15 border-teal text-teal'
+                : 'bg-surface2 border-border2 text-text2 hover:border-text3'
+            )}
+          >
+            <Pencil size={13} />
           </button>
 
           <button
@@ -282,21 +460,38 @@ export default function MriWorkspace({ scan }: MriWorkspaceProps) {
           </button>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            setSlice(82)
-            setZoomLevel(1)
-            setOverlayMode('all')
-            setShowRuler(true)
-            setActiveTool('brush')
-          }}
-          title="Reset viewer"
-          aria-label="Reset viewer"
-          className="w-8 h-8 flex items-center justify-center bg-surface2 border border-border2 text-text3 hover:text-danger hover:border-danger transition-colors"
-        >
-          <RotateCcw size={13} />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              setCaliper(null)
+              setBrushPaths([])
+              setCurrentPath(null)
+            }}
+            title="Clear annotations"
+            aria-label="Clear annotations"
+            className="w-8 h-8 flex items-center justify-center bg-surface2 border border-border2 text-text3 hover:text-danger hover:border-danger transition-colors"
+          >
+            <Trash2 size={13} />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSlice(82)
+              setZoomLevel(1)
+              setOverlayMode('all')
+              setCaliper({ p1: { x: 106, y: 118 }, p2: { x: 175, y: 118 } })
+              setBrushPaths([])
+              setActiveTool('ruler')
+            }}
+            title="Reset viewer"
+            aria-label="Reset viewer"
+            className="w-8 h-8 flex items-center justify-center bg-surface2 border border-border2 text-text3 hover:text-teal hover:border-teal transition-colors"
+          >
+            <RotateCcw size={13} />
+          </button>
+        </div>
       </div>
     </aside>
   )

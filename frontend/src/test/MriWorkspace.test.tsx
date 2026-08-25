@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import MriWorkspace from '@/components/shared/MriWorkspace'
 import { mockScans } from '@/data/mockData'
@@ -12,16 +12,16 @@ describe('MriWorkspace', () => {
     expect(screen.getByText(/128 SL/)).toBeInTheDocument()
   })
 
-  it('brush tool is active by default and tools are selectable', async () => {
+  it('ruler tool is active by default and tools are selectable', async () => {
     const user = userEvent.setup()
     render(<MriWorkspace scan={scan} />)
 
-    const brushBtn = screen.getByTitle('Brush annotation')
-    expect(brushBtn).toBeInTheDocument()
-
-    const rulerBtn = screen.getByTitle('Measure diameter')
-    await user.click(rulerBtn)
+    const rulerBtn = screen.getByTitle(/Measure diameter/i)
     expect(rulerBtn).toHaveClass('border-teal')
+
+    const brushBtn = screen.getByTitle(/Brush annotation/i)
+    await user.click(brushBtn)
+    expect(brushBtn).toHaveClass('border-teal')
   })
 
   it('steps slices and changes slice display', async () => {
@@ -44,8 +44,24 @@ describe('MriWorkspace', () => {
     expect(screen.getByTitle('Show AI Mask')).toBeInTheDocument()
 
     const zoomBtn = screen.getByRole('button', { name: 'Zoom' })
-    expect(screen.getByText('Zoom: 1x')).toBeInTheDocument()
+    expect(screen.getByText('1x')).toBeInTheDocument()
     await user.click(zoomBtn)
-    expect(screen.getByText('Zoom: 1.4x')).toBeInTheDocument()
+    expect(screen.getByText('1.4x')).toBeInTheDocument()
+  })
+
+  it('allows interactive drag measuring with ruler tool', () => {
+    render(<MriWorkspace scan={scan} />)
+    const img = screen.getByAltText(/Axial MRI scan slice/i)
+    const container = img.parentElement!
+
+    // Default caliper measurement display
+    expect(screen.getByText(/Caliper:/i)).toBeInTheDocument()
+
+    // Simulate drag to measure
+    fireEvent.mouseDown(container, { clientX: 50, clientY: 50 })
+    fireEvent.mouseMove(container, { clientX: 150, clientY: 50 })
+    fireEvent.mouseUp(container)
+
+    expect(screen.getByText(/Caliper:/i)).toBeInTheDocument()
   })
 })
