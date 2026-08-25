@@ -47,7 +47,14 @@ function StatusBadge({ status }: { status: BackendJobStatus }) {
   )
 }
 
-const ALGORITHM_STAGES = [
+const ALGORITHM_STAGES: Array<{
+  id: string
+  stepNumber: number
+  title: string
+  description: string
+  minProgress: number
+  matchingStages: string[]
+}> = [
   {
     id: 'data-fetching',
     stepNumber: 1,
@@ -88,7 +95,7 @@ const ALGORITHM_STAGES = [
     minProgress: 95,
     matchingStages: ['report-generation', 'materialize-results'],
   },
-] as const
+]
 
 export interface BackendOperatorWorkspaceProps {
   headingEyebrow?: string

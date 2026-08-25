@@ -258,4 +258,21 @@ describe('DoctorPatientDashboardPage MRI upload pipeline', () => {
     expect(await screen.findByText('Clinical result: P-1001 / study-1')).toBeInTheDocument()
     expect(getStudyResultsMock).not.toHaveBeenCalled()
   })
+
+  it('renders download PDF buttons in reports tab', async () => {
+    listReportsMock.mockResolvedValue([
+      {
+        id: 'RPT-1',
+        patientId: 'P-1001',
+        title: 'Multi-Agent Clinical Summary · 2026-04-12',
+        generatedAt: '2026-04-12T10:00:00Z',
+        summarySnippet: 'Baseline tumor assessment.',
+      },
+    ])
+    renderPatientChart('reports')
+
+    expect(await screen.findByText('Clinical reports')).toBeInTheDocument()
+    expect(await screen.findByText('Multi-Agent Clinical Summary · 2026-04-12')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Download PDF/i })).toBeInTheDocument()
+  })
 })

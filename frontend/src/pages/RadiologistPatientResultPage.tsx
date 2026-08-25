@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  Download,
   FileScan,
   ScanSearch,
 } from 'lucide-react'
@@ -16,6 +17,7 @@ import StatBlock from '@/components/shared/StatBlock'
 import { getPatient } from '@/api/patients'
 import { getStudyResults } from '@/api/backendWorkspace'
 import { cn, formatVolume } from '@/lib/utils'
+import { downloadReportPdf } from '@/lib/pdfReportGenerator'
 import { useAuthStore } from '@/store/authStore'
 import type { BackendCaseResult, BackendLesionResult } from '@/types'
 
@@ -200,6 +202,18 @@ export default function RadiologistPatientResultPage() {
     ? `/doctor/patients/${patientId}?tab=upload`
     : (user?.role === 'radiologist' ? '/radiologist' : '/doctor')
 
+  function handleDownloadPdf() {
+    if (!displayReport) return
+    downloadReportPdf({
+      patient,
+      studyId,
+      lesion,
+      structuredReport: displayReport,
+      authorName: user?.name,
+      authorRole: user?.role,
+    })
+  }
+
   return (
     <div className="min-h-screen bg-bg flex flex-col">
       <TopNav />
@@ -224,7 +238,16 @@ export default function RadiologistPatientResultPage() {
                   : 'Loading patient context...'}
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDownloadPdf}
+                disabled={!displayReport}
+                className="inline-flex items-center gap-2 border border-teal bg-teal/10 px-3.5 py-2 font-mono text-[11px] font-bold uppercase tracking-widest text-teal transition-colors hover:bg-teal hover:text-bg disabled:opacity-40"
+              >
+                <Download size={14} />
+                Download PDF report
+              </button>
               <div className="border border-teal/25 bg-teal/5 px-3 py-2 font-mono text-[11px] uppercase tracking-widest text-teal">
                 AI inference complete
               </div>
@@ -281,9 +304,21 @@ export default function RadiologistPatientResultPage() {
                 </section>
 
                 <section className="border border-border bg-surface p-5">
-                  <div className="mb-4 flex items-center gap-2 font-mono text-[12px] font-bold uppercase tracking-widest text-teal">
-                    <ClipboardList size={15} />
-                    {displayReport?.title ?? 'AI structured report'}
+                  <div className="mb-4 flex items-center justify-between gap-2 border-b border-border pb-3">
+                    <div className="flex items-center gap-2 font-mono text-[12px] font-bold uppercase tracking-widest text-teal">
+                      <ClipboardList size={15} />
+                      {displayReport?.title ?? 'AI structured report'}
+                    </div>
+                    {displayReport && (
+                      <button
+                        type="button"
+                        onClick={handleDownloadPdf}
+                        className="inline-flex items-center gap-1.5 border border-teal/40 bg-teal/5 px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-teal transition-colors hover:bg-teal/15"
+                      >
+                        <Download size={12} />
+                        Export PDF
+                      </button>
+                    )}
                   </div>
                   {displayReport ? (
                     <div className="space-y-4 text-[14px] leading-relaxed text-text2">

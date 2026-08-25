@@ -1,9 +1,12 @@
-import type { Summary } from '@/types'
+import type { Patient, Scan, Summary } from '@/types'
 import { formatDate } from '@/lib/utils'
-import { Sparkles, Bot, Database, ShieldCheck, CheckCircle2 } from 'lucide-react'
+import { downloadReportPdf } from '@/lib/pdfReportGenerator'
+import { Sparkles, Bot, Database, ShieldCheck, CheckCircle2, Download } from 'lucide-react'
 
 interface AIInsightsPanelProps {
   summary: Summary
+  patient?: Patient | null
+  scan?: Scan | null
 }
 
 function renderBoldText(text: string) {
@@ -18,7 +21,17 @@ function renderBoldText(text: string) {
   ))
 }
 
-export default function AIInsightsPanel({ summary }: AIInsightsPanelProps) {
+export default function AIInsightsPanel({ summary, patient, scan }: AIInsightsPanelProps) {
+  function handleDownloadPdf() {
+    downloadReportPdf({
+      patient,
+      scan,
+      summary,
+      reportTitle: 'AI Multi-Agent Clinical Narrative & Progression Report',
+      generatedAt: summary.generatedAt,
+    })
+  }
+
   return (
     <div className="bg-surface border border-border2 border-l-[3px] border-l-teal p-5">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-4 pb-3 border-b border-border2">
@@ -42,6 +55,13 @@ export default function AIInsightsPanel({ summary }: AIInsightsPanelProps) {
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
             <ShieldCheck size={11} /> Validated
           </span>
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded border border-teal/40 bg-teal/10 text-teal font-mono text-[10px] font-bold uppercase tracking-wider hover:bg-teal hover:text-bg transition-colors"
+          >
+            <Download size={11} /> Export PDF
+          </button>
         </div>
       </div>
 

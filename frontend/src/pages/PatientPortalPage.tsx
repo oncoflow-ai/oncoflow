@@ -10,7 +10,8 @@ import { getPatient } from '@/api/patients'
 import { getScans } from '@/api/scans'
 import { getSummary, listReports } from '@/api/reports'
 import { formatDate } from '@/lib/utils'
-import { Activity, FileText } from 'lucide-react'
+import { downloadReportPdf } from '@/lib/pdfReportGenerator'
+import { Activity, Download, FileText } from 'lucide-react'
 
 const DEFAULT_RECOMMENDATIONS = [
   'Bring imaging summaries to your next oncology appointment.',
@@ -86,7 +87,11 @@ export default function PatientPortalPage() {
             </section>
 
             {summaryQuery.data && (
-              <AIInsightsPanel summary={summaryQuery.data} />
+              <AIInsightsPanel
+                summary={summaryQuery.data}
+                patient={patient}
+                scan={scans[scans.length - 1]}
+              />
             )}
 
             <section className="border border-border bg-surface p-5">
@@ -115,7 +120,26 @@ export default function PatientPortalPage() {
                 <ul className="space-y-3">
                   {reportsQuery.data!.map(r => (
                     <li key={r.id} className="border border-border2 bg-bg px-4 py-3">
-                      <div className="font-mono text-[11px] text-teal">{r.title}</div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="font-mono text-[11px] text-teal">{r.title}</div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            downloadReportPdf({
+                              patient,
+                              scan: scans[scans.length - 1],
+                              studyId: r.studyId,
+                              summary: summaryQuery.data,
+                              reportTitle: r.title,
+                              generatedAt: r.generatedAt,
+                            })
+                          }
+                          className="inline-flex items-center gap-1 border border-border2 bg-surface px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-text2 transition-colors hover:border-teal hover:text-teal"
+                        >
+                          <Download size={11} />
+                          Download PDF
+                        </button>
+                      </div>
                       <p className="text-[13px] text-text2 mt-2">{r.summarySnippet}</p>
                     </li>
                   ))}

@@ -13,7 +13,8 @@ import { getPatient } from '@/api/patients'
 import { getScans } from '@/api/scans'
 import { generateReport, getSummary, listReports, saveMriAnalysisReport } from '@/api/reports'
 import { formatDate, formatVolume, calcVolumeDeltaPct, cn } from '@/lib/utils'
-import { ScanLine } from 'lucide-react'
+import { downloadReportPdf } from '@/lib/pdfReportGenerator'
+import { Download, ScanLine } from 'lucide-react'
 
 type Tab = 'scans' | 'upload' | 'reports'
 
@@ -255,7 +256,11 @@ export default function DoctorPatientDashboardPage() {
             {summaryQuery.isLoading ? (
               <div className="h-28 bg-surface border border-border animate-pulse" />
             ) : summaryQuery.data ? (
-              <AIInsightsPanel summary={summaryQuery.data} />
+              <AIInsightsPanel
+                summary={summaryQuery.data}
+                patient={patient}
+                scan={selectedScan}
+              />
             ) : null}
           </div>
 
@@ -293,7 +298,7 @@ export default function DoctorPatientDashboardPage() {
 
       {tab === 'reports' && (
         <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4 max-w-3xl">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={() => generateMutation.mutate()}
@@ -302,6 +307,24 @@ export default function DoctorPatientDashboardPage() {
             >
               {generateMutation.isPending ? 'Generating…' : 'Generate report'}
             </button>
+            {summaryQuery.data && (
+              <button
+                type="button"
+                onClick={() =>
+                  downloadReportPdf({
+                    patient,
+                    scan: latestScan,
+                    summary: summaryQuery.data,
+                    reportTitle: 'Clinical Oncology & Tumor Trajectory Report',
+                    generatedAt: summaryQuery.data?.generatedAt,
+                  })
+                }
+                className="inline-flex items-center gap-1.5 border border-teal/40 bg-teal/10 px-3.5 py-1.5 font-mono text-[11px] font-bold uppercase tracking-widest text-teal transition-colors hover:bg-teal hover:text-bg"
+              >
+                <Download size={13} />
+                Download latest summary (PDF)
+              </button>
+            )}
             {generateMutation.isError && (
               <span className="text-danger text-[12px] font-mono">Could not generate report.</span>
             )}
@@ -319,19 +342,40 @@ export default function DoctorPatientDashboardPage() {
             <ul className="space-y-2">
               {reportsQuery.data!.map(r => (
                 <li key={r.id} className="border border-border bg-surface p-4">
-                  <div className="font-mono text-[11px] text-teal">{r.title}</div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="font-mono text-[11px] text-teal">{r.title}</div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        downloadReportPdf({
+                          patient,
+                          scan: latestScan,
+                          studyId: r.studyId,
+                          summary: summaryQuery.data,
+                          reportTitle: r.title,
+                          generatedAt: r.generatedAt,
+                        })
+                      }
+                      className="inline-flex items-center gap-1 border border-border2 bg-bg px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-text2 transition-colors hover:border-teal hover:text-teal"
+                    >
+                      <Download size={11} />
+                      Download PDF
+                    </button>
+                  </div>
                   <div className="text-[11px] font-mono text-text3 mt-1">
                     {new Date(r.generatedAt).toLocaleString()}
                   </div>
                   <p className="text-[13px] text-text2 mt-2 leading-relaxed">{r.summarySnippet}</p>
                   {r.studyId && (
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/patients/${id}/results/${r.studyId}`)}
-                      className="mt-3 border border-teal/40 px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-widest text-teal transition-colors hover:bg-teal/10"
-                    >
-                      Open analysis
-                    </button>
+                    <div className="mt-3 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/patients/${id}/results/${r.studyId}`)}
+                        className="border border-teal/40 px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-widest text-teal transition-colors hover:bg-teal/10"
+                      >
+                        Open analysis
+                      </button>
+                    </div>
                   )}
                 </li>
               ))}
