@@ -135,19 +135,10 @@ export default function AuthPage() {
                 <button
                   type="button"
                   onClick={() => { setEmail('dr.cohen@ichilov.gov.il'); setPassword('password'); }}
-                  className="px-2 py-1.5 bg-bg border border-border hover:border-teal text-left transition-colors"
+                  className="px-2 py-1.5 bg-bg border border-border hover:border-teal text-left col-span-2 transition-colors"
                 >
                   <div className="text-teal font-bold">Doctor</div>
                   <div className="text-text3 text-[10px] truncate">dr.cohen@ichilov.gov.il</div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => { setEmail('clinician@oncoflow.local'); setPassword('password'); }}
-                  className="px-2 py-1.5 bg-bg border border-border hover:border-teal text-left transition-colors"
-                >
-                  <div className="text-teal font-bold">Clinician</div>
-                  <div className="text-text3 text-[10px] truncate">clinician@oncoflow.local</div>
                 </button>
 
                 <button
@@ -162,7 +153,7 @@ export default function AuthPage() {
             </div>
             <hr className="border-border my-6" />
             <p className="text-[12px] text-text2 text-center font-sans">
-              New clinician?{' '}
+              Need access?{' '}
               <button type="button" onClick={() => setMode('register')} className="text-teal font-semibold">
                 Request access from admin →
               </button>
