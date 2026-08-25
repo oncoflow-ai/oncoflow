@@ -112,4 +112,12 @@ describe('RadiologistPatientResultPage', () => {
 
     expect(await screen.findByText('Destination: /doctor/patients/P-9001?tab=upload')).toBeInTheDocument()
   })
+
+  it('renders Download PDF report and Export PDF buttons on the result page', async () => {
+    renderResultPage('P-9001', 'study-demo-1')
+    expect(await screen.findByText('Segmentation result')).toBeInTheDocument()
+    expect(await screen.findByText(/AI brain MRI segmentation report/i)).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /Export PDF/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Download PDF report/i })).toBeInTheDocument()
+  })
 })
