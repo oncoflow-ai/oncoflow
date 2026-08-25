@@ -196,9 +196,9 @@ export default function RadiologistPatientResultPage() {
     () => lesion ? { ...fallbackReport(lesion), ...report } : null,
     [lesion, report]
   )
-  const returnTo = user?.role === 'radiologist'
-    ? '/radiologist'
-    : `/doctor/patients/${patientId}?tab=reports`
+  const returnTo = patientId
+    ? `/doctor/patients/${patientId}?tab=upload`
+    : (user?.role === 'radiologist' ? '/radiologist' : '/doctor')
 
   return (
     <div className="min-h-screen bg-bg flex flex-col">
@@ -213,7 +213,7 @@ export default function RadiologistPatientResultPage() {
                 className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-widest text-text3 hover:text-teal"
               >
                 <ArrowLeft size={14} />
-                {user?.role === 'radiologist' ? 'Upload another MRI' : 'Back to reports'}
+                Upload another MRI
               </Link>
               <h1 className="mt-3 font-sans text-[28px] font-bold text-text1">
                 Segmentation result
