@@ -93,18 +93,37 @@ def execute_ingestion_job(*, job_id: str) -> WorkerDispatchEnvelope:
             .one()
         )
 
+        STAGE_PROGRESS_MAP: dict[str, tuple[int, str]] = {
+            "profiling": (15, "Ingesting and profiling DICOM series metadata..."),
+            "prepare-inputs": (30, "Preparing canonical volumetric input slices..."),
+            "bone-extraction": (45, "Extracting bone anatomy and reference boundaries..."),
+            "infer": (65, "Executing AI tumor segmentation models..."),
+            "postprocess": (80, "Calculating volumetric measurements and lesion metrics..."),
+            "package-results": (90, "Packaging segmentation masks and review artifacts..."),
+            "materialize-results": (95, "Generating structured AI clinical report..."),
+            "completed": (100, "Analysis completed successfully."),
+        }
+
         current_stage = "profiling"
         log_stage("info", "Starting ingestion worker", study_id=str(study.public_id), stage=current_stage)
-        running_state = transition_job(job.status, "running", stage=current_stage)
+        running_state = transition_job(
+            job.status,
+            "running",
+            stage=current_stage,
+            progress=15,
+            stage_message="Ingesting and profiling DICOM series metadata...",
+        )
         job.status = running_state.status
         job.stage = running_state.stage
+        job.progress = running_state.progress
+        job.stage_message = running_state.stage_message
         session.add(
             JobEvent(
                 job_id=job.id,
                 status=job.status,
                 stage=job.stage,
                 event_type="transition",
-                payload={"detail": "worker started"},
+                payload={"detail": "worker started", "progress": 15, "stage_message": job.stage_message},
             )
         )
         session.flush()
@@ -112,17 +131,26 @@ def execute_ingestion_job(*, job_id: str) -> WorkerDispatchEnvelope:
         def _update_stage(stage: str, detail: str) -> None:
             nonlocal current_stage
             current_stage = stage
+            prog, msg = STAGE_PROGRESS_MAP.get(stage, (50, detail))
             log_stage("debug", "Worker stage transition", study_id=str(study.public_id), stage=stage, detail=detail)
-            stage_state = transition_job(job.status, job.status, stage=stage)
+            stage_state = transition_job(
+                job.status,
+                job.status,
+                stage=stage,
+                progress=prog,
+                stage_message=msg,
+            )
             job.status = stage_state.status
             job.stage = stage_state.stage
+            job.progress = stage_state.progress
+            job.stage_message = stage_state.stage_message
             session.add(
                 JobEvent(
                     job_id=job.id,
                     status=job.status,
                     stage=job.stage,
                     event_type="transition",
-                    payload={"detail": detail},
+                    payload={"detail": detail, "progress": prog, "stage_message": msg},
                 )
             )
             session.flush()
@@ -144,9 +172,17 @@ def execute_ingestion_job(*, job_id: str) -> WorkerDispatchEnvelope:
                 session=session,
                 study_public_id=study.public_id,
             )
-            completed_state = transition_job(job.status, "completed", stage="completed")
+            completed_state = transition_job(
+                job.status,
+                "completed",
+                stage="completed",
+                progress=100,
+                stage_message="Analysis completed successfully.",
+            )
             job.status = completed_state.status
             job.stage = completed_state.stage
+            job.progress = completed_state.progress
+            job.stage_message = completed_state.stage_message
             job.failure_payload = None
             log_stage("info", "Ingestion worker completed", study_id=str(study.public_id), stage="completed")
             
@@ -162,7 +198,7 @@ def execute_ingestion_job(*, job_id: str) -> WorkerDispatchEnvelope:
                     status=job.status,
                     stage=job.stage,
                     event_type="transition",
-                    payload={"detail": "analysis completed"},
+                    payload={"detail": "analysis completed", "progress": 100, "stage_message": "Analysis completed successfully."},
                 )
             )
             session.commit()
@@ -244,19 +280,54 @@ def execute_nifti_segmentation_job(*, job_id: str) -> WorkerDispatchEnvelope:
             .first()
         )
 
-        running_state = transition_job(job.status, "running", stage="materialize-results")
+        current_stage = "data-fetching"
+        running_state = transition_job(
+            job.status,
+            "running",
+            stage=current_stage,
+            progress=15,
+            stage_message="Fetching and verifying NIfTI scan and mask inputs...",
+        )
         job.status = running_state.status
         job.stage = running_state.stage
+        job.progress = running_state.progress
+        job.stage_message = running_state.stage_message
         session.add(
             JobEvent(
                 job_id=job.id,
                 status=job.status,
                 stage=job.stage,
                 event_type="transition",
-                payload={"detail": "nifti worker started"},
+                payload={"detail": "nifti worker started", "progress": 15, "stage_message": job.stage_message},
             )
         )
         session.flush()
+
+        def _update_stage(stage: str, progress: int, stage_message: str) -> None:
+            nonlocal current_stage
+            current_stage = stage
+            log_stage("debug", "Worker stage transition", study_id=str(study.public_id), stage=stage, detail=stage_message)
+            stage_state = transition_job(
+                job.status,
+                job.status,
+                stage=stage,
+                progress=progress,
+                stage_message=stage_message,
+            )
+            job.status = stage_state.status
+            job.stage = stage_state.stage
+            job.progress = stage_state.progress
+            job.stage_message = stage_state.stage_message
+            session.add(
+                JobEvent(
+                    job_id=job.id,
+                    status=job.status,
+                    stage=job.stage,
+                    event_type="transition",
+                    payload={"detail": stage_message, "progress": progress, "stage_message": stage_message},
+                )
+            )
+            session.flush()
 
         try:
             if mask_artifact is None:
@@ -268,6 +339,12 @@ def execute_nifti_segmentation_job(*, job_id: str) -> WorkerDispatchEnvelope:
                 mask_artifact.storage_root,  # type: ignore[arg-type]
                 mask_artifact.relative_path,
             )
+            
+            _update_stage("bone-extraction", 35, "Extracting bone structures and anatomical landmarks...")
+            _update_stage("segmentation", 65, "Processing tumor segmentation and volume alignment...")
+            _update_stage("quantification", 80, "Calculating tumor volume, max diameter, and bounding box...")
+            _update_stage("report-generation", 95, "Materializing results and generating clinical report...")
+
             log_stage(
                 "info",
                 "Materializing NIfTI demo result",
@@ -279,9 +356,17 @@ def execute_nifti_segmentation_job(*, job_id: str) -> WorkerDispatchEnvelope:
                 study_public_id=study.public_id,
                 mask_source_absolute_path=Path(mask_location.absolute_path),
             )
-            completed_state = transition_job(job.status, "completed", stage="completed")
+            completed_state = transition_job(
+                job.status,
+                "completed",
+                stage="completed",
+                progress=100,
+                stage_message="Analysis completed successfully.",
+            )
             job.status = completed_state.status
             job.stage = completed_state.stage
+            job.progress = completed_state.progress
+            job.stage_message = completed_state.stage_message
             job.failure_payload = None
             
             log_audit_event(
@@ -296,7 +381,7 @@ def execute_nifti_segmentation_job(*, job_id: str) -> WorkerDispatchEnvelope:
                     status=job.status,
                     stage=job.stage,
                     event_type="transition",
-                    payload={"detail": "nifti analysis completed"},
+                    payload={"detail": "nifti analysis completed", "progress": 100, "stage_message": "Analysis completed successfully."},
                 )
             )
             session.commit()
@@ -455,9 +540,18 @@ def execute_demo_mri_segmentation_job(*, job_id: str) -> WorkerDispatchEnvelope:
         job = session.query(Job).filter(Job.public_id == UUID(job_id)).one()
         study = session.query(Study).filter(Study.id == job.study_id).one()
 
-        running_state = transition_job(job.status, "running", stage="demo-inference")
+        current_stage = "data-fetching"
+        running_state = transition_job(
+            job.status,
+            "running",
+            stage=current_stage,
+            progress=15,
+            stage_message="Fetching and verifying MRI scan volume...",
+        )
         job.status = running_state.status
         job.stage = running_state.stage
+        job.progress = running_state.progress
+        job.stage_message = running_state.stage_message
         session.add(
             JobEvent(
                 job_id=job.id,
@@ -466,16 +560,62 @@ def execute_demo_mri_segmentation_job(*, job_id: str) -> WorkerDispatchEnvelope:
                 event_type="transition",
                 payload={
                     "detail": "demo MRI segmentation worker started",
+                    "progress": 15,
+                    "stage_message": job.stage_message,
                     "delaySeconds": settings.demo_job_delay_seconds,
                 },
             )
         )
         session.commit()
 
+        def _update_stage(stage: str, progress: int, stage_message: str) -> None:
+            nonlocal current_stage
+            current_stage = stage
+            log_stage("debug", "Demo stage transition", study_id=str(study.public_id), stage=stage, detail=stage_message)
+            stage_state = transition_job(
+                job.status,
+                job.status,
+                stage=stage,
+                progress=progress,
+                stage_message=stage_message,
+            )
+            job.status = stage_state.status
+            job.stage = stage_state.stage
+            job.progress = stage_state.progress
+            job.stage_message = stage_state.stage_message
+            session.add(
+                JobEvent(
+                    job_id=job.id,
+                    status=job.status,
+                    stage=job.stage,
+                    event_type="transition",
+                    payload={"detail": stage_message, "progress": progress, "stage_message": stage_message},
+                )
+            )
+            session.commit()
+
         try:
             delay_seconds = max(0.0, float(settings.demo_job_delay_seconds))
-            if delay_seconds:
-                time.sleep(delay_seconds)
+            step_delay = (delay_seconds / 5.0) if delay_seconds > 0 else 0.0
+
+            if step_delay > 0:
+                time.sleep(step_delay)
+
+            _update_stage("bone-extraction", 35, "Extracting bone structures and anatomical landmarks...")
+            if step_delay > 0:
+                time.sleep(step_delay)
+
+            _update_stage("segmentation", 65, "Running deep learning tumor segmentation model...")
+            if step_delay > 0:
+                time.sleep(step_delay)
+
+            _update_stage("quantification", 80, "Calculating tumor volume, diameter, and spatial metrics...")
+            if step_delay > 0:
+                time.sleep(step_delay)
+
+            _update_stage("report-generation", 95, "Generating structured AI clinical oncology report...")
+            if step_delay > 0:
+                time.sleep(step_delay)
 
             mask_path = _default_demo_mask_path(settings)
             if not mask_path.exists():
@@ -499,9 +639,17 @@ def execute_demo_mri_segmentation_job(*, job_id: str) -> WorkerDispatchEnvelope:
                 },
                 result_metadata=_demo_result_metadata(),
             )
-            completed_state = transition_job(job.status, "completed", stage="completed")
+            completed_state = transition_job(
+                job.status,
+                "completed",
+                stage="completed",
+                progress=100,
+                stage_message="Analysis completed successfully.",
+            )
             job.status = completed_state.status
             job.stage = completed_state.stage
+            job.progress = completed_state.progress
+            job.stage_message = completed_state.stage_message
             job.failure_payload = None
             session.add(
                 JobEvent(
@@ -509,7 +657,7 @@ def execute_demo_mri_segmentation_job(*, job_id: str) -> WorkerDispatchEnvelope:
                     status=job.status,
                     stage=job.stage,
                     event_type="transition",
-                    payload={"detail": "demo MRI segmentation completed"},
+                    payload={"detail": "demo MRI segmentation completed", "progress": 100, "stage_message": "Analysis completed successfully."},
                 )
             )
             session.commit()

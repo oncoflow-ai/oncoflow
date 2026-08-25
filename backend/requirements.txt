@@ -1,0 +1,27 @@
+# OncoFlow Backend Dependencies
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.32,<1.0
+sqlalchemy>=2.0,<3.0
+alembic>=1.13,<2.0
+celery>=5.4,<6.0
+pydicom>=3.0,<4.0
+pydantic-settings>=2.6,<3.0
+python-json-logger>=3.2.0,<4.0
+python-multipart>=0.0.9,<1.0
+passlib>=1.7.4,<2.0
+bcrypt>=4.0,<5.0
+pyjwt>=2.8,<3.0
+psycopg2-binary>=2.9,<3.0
+
+# ML / Scientific dependencies for MRI processing
+nibabel>=5.3,<6.0
+numpy>=2.0,<3.0
+scipy>=1.14,<2.0
+PyYAML>=6.0,<7.0
+SimpleITK>=2.3,<3.0
+torch>=2.5,<3.0
+typer>=0.12,<1.0
+
+# Testing / Dev dependencies
+httpx>=0.28,<1.0
+pytest>=8.4,<9.0

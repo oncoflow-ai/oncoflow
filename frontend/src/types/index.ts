@@ -103,6 +103,8 @@ export interface BackendJobSubmission {
   studyId: string
   status: BackendJobStatus
   stage: string
+  progress?: number
+  stageMessage?: string
   submittedAt: string
 }
 

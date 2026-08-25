@@ -65,7 +65,9 @@ class JobSubmissionResult:
     study_public_id: UUID
     status: str
     stage: str
-    submitted_at: datetime
+    progress: int = 0
+    stage_message: str | None = None
+    submitted_at: datetime = datetime.now(timezone.utc)
 
 
 @dataclass(frozen=True)
@@ -205,6 +207,8 @@ class JobService:
                     job_type="ingest-study",
                     status="queued",
                     stage="staged",
+                    progress=0,
+                    stage_message="Queued for analysis...",
                     created_at=submitted_at,
                     updated_at=submitted_at,
                 )
@@ -215,7 +219,7 @@ class JobService:
                     status="queued",
                     stage="staged",
                     event_type="transition",
-                    payload={"reason": "job submitted"},
+                    payload={"reason": "job submitted", "progress": 0, "stage_message": "Queued for analysis..."},
                     created_at=submitted_at,
                 ))
                 log_audit_event(
@@ -244,6 +248,8 @@ class JobService:
             study_public_id=study.public_id,
             status=job.status,
             stage=job.stage,
+            progress=job.progress or 0,
+            stage_message=job.stage_message or "Queued for analysis...",
             submitted_at=submitted_at,
         )
 
@@ -306,12 +312,11 @@ class JobService:
                     patient_id=patient.id,
                     patient_public_id=patient.public_id,
                     study_instance_uid=f"nifti-{study_public_id}",
-                    source_kind="nifti-upload",
+                    source_kind="nifti",
                     source_metadata={
                         "source_label": source_label,
-                        "uploaded_filename": scan_filename,
-                        "scan_relative_path": scan_location.relative_path,
-                        "mask_relative_path": mask_relative_path,
+                        "scan_filename": scan_filename,
+                        "mask_filename": mask_filename,
                         "acquired_at": acquired_at.isoformat() if acquired_at else None,
                     },
                     staging_status="staged",
@@ -321,9 +326,9 @@ class JobService:
                 session.flush()
                 session.add(Artifact(
                     study_id=study.id,
-                    artifact_kind="nifti-source",
+                    artifact_kind="scan-upload",
                     storage_root="raw",
-                    relative_path=scan_location.relative_path,
+                    relative_path=scan_relative_path,
                     source_metadata={"filename": scan_filename},
                 ))
                 if mask_relative_path is not None:
@@ -339,6 +344,8 @@ class JobService:
                     job_type="ingest-nifti",
                     status="queued",
                     stage="staged",
+                    progress=0,
+                    stage_message="Queued for analysis...",
                     created_at=submitted_at,
                     updated_at=submitted_at,
                 )
@@ -349,7 +356,7 @@ class JobService:
                     status="queued",
                     stage="staged",
                     event_type="transition",
-                    payload={"reason": "nifti job submitted"},
+                    payload={"reason": "nifti job submitted", "progress": 0, "stage_message": "Queued for analysis..."},
                     created_at=submitted_at,
                 ))
                 log_audit_event(
@@ -371,9 +378,11 @@ class JobService:
 
         return JobSubmissionResult(
             job_public_id=job.public_id,
-            study_public_id=study.public_id,
+            study_public_id=study_public_id,
             status=job.status,
             stage=job.stage,
+            progress=job.progress or 0,
+            stage_message=job.stage_message or "Queued for analysis...",
             submitted_at=submitted_at,
         )
 
@@ -422,12 +431,13 @@ class JobService:
             session.add(study)
             session.flush()
 
-
             job = Job(
                 study_id=study.id,
                 job_type="demo-mri-segmentation",
                 status="queued",
                 stage="staged",
+                progress=0,
+                stage_message="Queued for analysis...",
                 created_at=submitted_at,
                 updated_at=submitted_at,
             )
@@ -440,7 +450,7 @@ class JobService:
                     status="queued",
                     stage="staged",
                     event_type="transition",
-                    payload={"reason": "demo MRI segmentation job submitted"},
+                    payload={"reason": "demo MRI segmentation job submitted", "progress": 0, "stage_message": "Queued for analysis..."},
                     created_at=submitted_at,
                 )
             )
@@ -463,6 +473,8 @@ class JobService:
             study_public_id=study.public_id,
             status=job.status,
             stage=job.stage,
+            progress=job.progress or 0,
+            stage_message=job.stage_message or "Queued for analysis...",
             submitted_at=submitted_at,
         )
 
@@ -499,6 +511,8 @@ class JobService:
                 study_public_id=study.public_id,
                 status=job.status,
                 stage=job.stage,
+                progress=job.progress or (100 if job.status == "completed" else 0),
+                stage_message=job.stage_message or ("Analysis completed successfully." if job.status == "completed" else "Analysis in progress..."),
                 submitted_at=job.created_at,
                 error=error,
             )
